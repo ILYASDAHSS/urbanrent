@@ -1,0 +1,6 @@
+{
+  "name": "UrbanRent",
+  "description": "A modern luxury property rental platform for searching, saving, and booking premium apartments, lofts, and homes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
