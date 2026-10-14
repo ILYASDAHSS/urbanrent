@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('date');
             $table->string('time');
             $table->string('type'); // in-person, virtual
+            $table->text('location_address') // the location of evry single property or building // in progress must check later 
             $table->string('status')->default('Pending'); // Confirmed, Pending, Completed, Cancelled
             $table->string('host_name')->nullable();
             $table->timestamps();
