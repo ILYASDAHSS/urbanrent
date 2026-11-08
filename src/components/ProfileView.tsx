@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { TourBooking, Property } from '../types';
+import { TourBooking, Property, RentalApplication } from '../types';
 import { api } from '../api';
 
 interface ProfileViewProps {
   user: any;
   bookings: TourBooking[];
   properties: Property[];
-  onCancelBooking: (id: string) => void;
+  onCancelBooking: (id: string) => Promise<void>;
   onLogout: () => void;
   onAddPropertyOpen: () => void;
   onDeleteProperty: (id: string) => Promise<void>;
   onUpdateBookingStatus: (id: string, status: string) => Promise<void>;
+  onUpdatePropertyStatus: (id: string, listingStatus: 'available' | 'leased') => Promise<void>;
+  applications: RentalApplication[];
+  onUpdateApplicationStatus: (id: string, status: RentalApplication['status']) => Promise<void>;
+  onUpdateProfile: (profile: Record<string, unknown>) => Promise<void>;
   // Admin-specific props
   adminUsers?: any[];
   onUpdateUserRole?: (id: number | string, role: string) => Promise<void>;
@@ -26,13 +30,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onAddPropertyOpen,
   onDeleteProperty,
   onUpdateBookingStatus,
+  onUpdatePropertyStatus,
+  applications,
+  onUpdateApplicationStatus,
+  onUpdateProfile,
   adminUsers = [],
   onUpdateUserRole,
   onDeleteUser,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'listings' | 'requests' | 'users' | 'stats'>('listings');
+  const [activeSubTab, setActiveSubTab] = useState<'listings' | 'requests' | 'applications' | 'users' | 'stats'>('listings');
   const [adminStats, setAdminStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const runAction = async (action: () => Promise<void>) => {
+    setActionError('');
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not save this change.');
+    }
+  };
 
   // Filter homeowner properties
   const myProperties = properties.filter(
@@ -109,7 +127,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <p className="text-xs text-[#777587] mt-1.5">
             {user.email} {user.phone ? `• ${user.phone}` : ''}
           </p>
+          <p className="text-[11px] text-[#777587] mt-1">
+            Member since {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'today'}
+            {user.city ? ` • Based in ${user.city}` : ''}
+            {user.occupation ? ` • ${user.occupation}` : ''}
+          </p>
         </div>
+
+        {actionError && (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+            {actionError}
+          </p>
+        )}
 
         <button
           onClick={onLogout}
@@ -119,6 +148,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           Log Out
         </button>
       </div>
+
+      <ProfileEditor user={user} onSave={onUpdateProfile} />
 
       {/* RENTER / TENANT DASHBOARD */}
       {user.role === 'user' && (
@@ -175,7 +206,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                       {b.status !== 'Cancelled' && b.status !== 'Completed' && (
                         <button
-                          onClick={() => onCancelBooking(b.id)}
+                          onClick={() => { void runAction(() => onCancelBooking(b.id)); }}
                           className="px-3 py-1 bg-white border border-red-200 text-[#ba1a1a] hover:bg-red-50 rounded-lg text-xs font-bold transition-all active:scale-95"
                         >
                           Cancel
@@ -188,36 +219,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             )}
           </div>
 
-          {/* Renter Preferences */}
-          <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
-            <h2 className="font-bold text-lg text-[#191c1e] border-b border-[#c7c4d8]/20 pb-3">
-              Renter Preferences
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="p-3 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20">
-                <span className="text-[#777587] block mb-1">Target Move-in Date</span>
-                <span className="font-bold text-[#191c1e] text-sm">September 1, 2026</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20">
-                <span className="text-[#777587] block mb-1">Desired Locations</span>
-                <span className="font-bold text-[#191c1e] text-sm">
-                  San Francisco, Chicago, New York
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20">
-                <span className="text-[#777587] block mb-1">Budget Range</span>
-                <span className="font-bold text-[#3525cd] text-sm">$1,500 - $3,500 / mo</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20">
-                <span className="text-[#777587] block mb-1">Pets</span>
-                <span className="font-bold text-[#191c1e] text-sm">Dog Friendly Required</span>
-              </div>
-            </div>
-          </div>
+          <ApplicationList
+            title="Your rental applications"
+            empty="You have not applied to a home yet. Open a listing and choose Apply Now."
+            applications={applications}
+          />
         </div>
       )}
 
@@ -247,6 +253,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <span className="material-symbols-outlined text-sm">notifications</span>
               Incoming Tour Requests ({bookings.length})
+            </button>
+            <button
+              onClick={() => setActiveSubTab('applications')}
+              className={`pb-3 text-sm font-bold transition-all border-b-2 px-1 flex items-center gap-1.5 ${
+                activeSubTab === 'applications'
+                  ? 'border-[#3525cd] text-[#3525cd]'
+                  : 'border-transparent text-[#777587] hover:text-[#191c1e]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">description</span>
+              Applications ({applications.length})
             </button>
           </div>
 
@@ -291,10 +308,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <h4 className="font-bold text-sm text-[#191c1e] line-clamp-1">{p.title}</h4>
                           <p className="text-[11px] text-[#777587] line-clamp-1">{p.address}, {p.city}</p>
                           <p className="text-xs font-extrabold text-[#3525cd] mt-1">${p.price}/mo</p>
+                          <p className="text-[11px] font-bold uppercase text-[#005236]">
+                            {p.listingStatus === 'leased' ? 'Leased' : 'On the market'}
+                          </p>
                         </div>
                         <div className="flex justify-end gap-2 mt-2">
                           <button
-                            onClick={() => onDeleteProperty(p.id)}
+                            onClick={() => {
+                              void runAction(() => onUpdatePropertyStatus(
+                                p.id,
+                                p.listingStatus === 'leased' ? 'available' : 'leased'
+                              ));
+                            }}
+                            className="px-2.5 py-1 bg-[#f7f9fb] border border-[#c7c4d8]/40 text-[#191c1e] rounded-lg text-[10px] font-bold"
+                          >
+                            {p.listingStatus === 'leased' ? 'Relist' : 'Mark leased'}
+                          </button>
+                          <button
+                            onClick={() => { void runAction(() => onDeleteProperty(p.id)); }}
                             className="px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 text-[#ba1a1a] rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-xs">delete</span>
@@ -307,6 +338,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               )}
             </div>
+          )}
+
+          {activeSubTab === 'applications' && (
+            <ApplicationList
+              title="Applications for your homes"
+              empty="Renters have not applied to your listings yet."
+              applications={applications}
+              onUpdateStatus={onUpdateApplicationStatus}
+              runAction={runAction}
+            />
           )}
 
           {/* Tab 2: Requests */}
@@ -357,13 +398,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         {b.status === 'Pending' && (
                           <div className="flex gap-2 w-full sm:w-auto">
                             <button
-                              onClick={() => onUpdateBookingStatus(b.id, 'Cancelled')}
+                              onClick={() => { void runAction(() => onUpdateBookingStatus(b.id, 'Cancelled')); }}
                               className="flex-1 sm:flex-none px-3 py-1.5 border border-red-200 text-[#ba1a1a] hover:bg-red-50 rounded-lg font-bold text-xs transition-all active:scale-95"
                             >
                               Decline
                             </button>
                             <button
-                              onClick={() => onUpdateBookingStatus(b.id, 'Confirmed')}
+                              onClick={() => { void runAction(() => onUpdateBookingStatus(b.id, 'Confirmed')); }}
                               className="flex-1 sm:flex-none px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-all active:scale-95 shadow-sm"
                             >
                               Confirm Request
@@ -373,7 +414,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
                         {b.status === 'Confirmed' && (
                           <button
-                            onClick={() => onUpdateBookingStatus(b.id, 'Completed')}
+                            onClick={() => { void runAction(() => onUpdateBookingStatus(b.id, 'Completed')); }}
                             className="w-full sm:w-auto px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-all active:scale-95 shadow-sm"
                           >
                             Mark Completed
@@ -560,7 +601,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <select
                             value={u.role}
                             disabled={u.id === user.id}
-                            onChange={(e) => onUpdateUserRole && onUpdateUserRole(u.id, e.target.value)}
+                            onChange={(e) => {
+                              if (onUpdateUserRole) {
+                                void runAction(() => onUpdateUserRole(u.id, e.target.value));
+                              }
+                            }}
                             className="bg-transparent border border-[#c7c4d8]/50 rounded px-2 py-1 font-bold text-[#3525cd] outline-none cursor-pointer disabled:opacity-50"
                           >
                             <option value="user">User/Tenant</option>
@@ -570,7 +615,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-right">
                           <button
-                            onClick={() => onDeleteUser && onDeleteUser(u.id)}
+                            onClick={() => {
+                              if (onDeleteUser) {
+                                void runAction(() => onDeleteUser(u.id));
+                              }
+                            }}
                             disabled={u.id === user.id}
                             className="px-2.5 py-1 text-xs font-bold bg-red-50 border border-red-100 hover:border-red-200 text-[#ba1a1a] rounded-lg transition-all active:scale-95 disabled:opacity-50"
                           >
@@ -625,7 +674,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                       {b.status !== 'Cancelled' && b.status !== 'Completed' && (
                         <button
-                          onClick={() => onCancelBooking(b.id)}
+                          onClick={() => { void runAction(() => onCancelBooking(b.id)); }}
                           className="px-3 py-1 bg-white border border-red-100 hover:bg-red-50 rounded-lg font-bold text-[#ba1a1a] transition-all active:scale-95"
                         >
                           Cancel Booking
@@ -642,3 +691,155 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     </div>
   );
 };
+
+const ProfileEditor: React.FC<{
+  user: any;
+  onSave: (profile: Record<string, unknown>) => Promise<void>;
+}> = ({ user, onSave }) => {
+  const [name, setName] = useState(user.name || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [city, setCity] = useState(user.city || '');
+  const [occupation, setOccupation] = useState(user.occupation || '');
+  const [bio, setBio] = useState(user.bio || '');
+  const [moveInDate, setMoveInDate] = useState(String(user.move_in_date || '').slice(0, 10));
+  const [budgetMin, setBudgetMin] = useState(user.budget_min ?? '');
+  const [budgetMax, setBudgetMax] = useState(user.budget_max ?? '');
+  const [pets, setPets] = useState(user.pets || '');
+  const [householdSize, setHouseholdSize] = useState(user.household_size ?? 1);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await onSave({
+        name,
+        phone,
+        city,
+        occupation,
+        bio,
+        move_in_date: moveInDate || null,
+        budget_min: budgetMin === '' ? null : Number(budgetMin),
+        budget_max: budgetMax === '' ? null : Number(budgetMax),
+        pets,
+        household_size: Number(householdSize) || 1,
+      });
+      setMessage('Profile saved.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save your profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
+      <div>
+        <h2 className="font-bold text-lg text-[#191c1e]">About you</h2>
+        <p className="text-xs text-[#777587]">This is what owners see when you book a tour or apply.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Full name" value={name} onChange={setName} />
+        <Field label="Phone" value={phone} onChange={setPhone} />
+        <Field label="City" value={city} onChange={setCity} />
+        <Field label="Occupation" value={occupation} onChange={setOccupation} />
+        <label className="text-xs font-bold text-[#464555]">
+          Target move-in
+          <input type="date" value={moveInDate} onChange={(event) => setMoveInDate(event.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl border border-[#c7c4d8]/50 font-normal" />
+        </label>
+        <label className="text-xs font-bold text-[#464555]">
+          Household size
+          <input type="number" min={1} max={12} value={householdSize} onChange={(event) => setHouseholdSize(Number(event.target.value))} className="mt-1 w-full px-3 py-2 rounded-xl border border-[#c7c4d8]/50 font-normal" />
+        </label>
+        <Field label="Minimum budget" value={String(budgetMin)} onChange={setBudgetMin} type="number" />
+        <Field label="Maximum budget" value={String(budgetMax)} onChange={setBudgetMax} type="number" />
+        <div className="sm:col-span-2">
+          <Field label="Pets" value={pets} onChange={setPets} placeholder="No pets, or one small dog" />
+        </div>
+        <label className="sm:col-span-2 text-xs font-bold text-[#464555]">
+          Short bio
+          <textarea value={bio} onChange={(event) => setBio(event.target.value)} rows={3} className="mt-1 w-full px-3 py-2 rounded-xl border border-[#c7c4d8]/50 font-normal" placeholder="Where you work, who is moving with you, and what you are looking for." />
+        </label>
+      </div>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl bg-[#3525cd] text-white text-sm font-bold disabled:opacity-70">
+          {saving ? 'Saving…' : 'Save profile'}
+        </button>
+        {message && <p className="text-xs text-[#464555]">{message}</p>}
+      </div>
+    </form>
+  );
+};
+
+const Field: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+}> = ({ label, value, onChange, type = 'text', placeholder }) => (
+  <label className="text-xs font-bold text-[#464555]">
+    {label}
+    <input
+      type={type}
+      value={value}
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-1 w-full px-3 py-2 rounded-xl border border-[#c7c4d8]/50 font-normal"
+    />
+  </label>
+);
+
+const ApplicationList: React.FC<{
+  title: string;
+  empty: string;
+  applications: RentalApplication[];
+  onUpdateStatus?: (id: string, status: RentalApplication['status']) => Promise<void>;
+  runAction?: (action: () => Promise<void>) => Promise<void>;
+}> = ({ title, empty, applications, onUpdateStatus, runAction }) => (
+  <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
+    <h2 className="font-bold text-lg text-[#191c1e] border-b border-[#c7c4d8]/20 pb-3">{title}</h2>
+    {applications.length === 0 ? (
+      <p className="text-xs text-[#777587] py-6 text-center">{empty}</p>
+    ) : (
+      <div className="space-y-3">
+        {applications.map((application) => (
+          <div key={application.id} className="p-4 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20 space-y-2">
+            <div className="flex justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-sm text-[#191c1e]">{application.propertyTitle}</h3>
+                <p className="text-[11px] text-[#777587]">{application.propertyAddress}</p>
+              </div>
+              <span className="text-[11px] font-bold uppercase text-[#3525cd]">{application.status}</span>
+            </div>
+            <p className="text-xs text-[#464555]">{application.message}</p>
+            <p className="text-[11px] text-[#777587]">
+              {application.tenantName}
+              {application.employment ? ` • ${application.employment}` : ''}
+              {application.moveInDate ? ` • Move-in ${application.moveInDate}` : ''}
+              {` • ${application.occupants} occupant${application.occupants === 1 ? '' : 's'}`}
+            </p>
+            {application.status === 'submitted' && onUpdateStatus && runAction && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { void runAction(() => onUpdateStatus(application.id, 'approved')); }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => { void runAction(() => onUpdateStatus(application.id, 'declined')); }}
+                  className="px-3 py-1.5 rounded-lg border border-red-200 text-[#ba1a1a] text-xs font-bold"
+                >
+                  Decline
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+);

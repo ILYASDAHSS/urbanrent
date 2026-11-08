@@ -12,6 +12,7 @@ export interface Property {
   image: string;
   gallery: string[];
   badge?: 'AVAILABLE NOW' | 'SPECIAL OFFER' | 'JUST LISTED' | 'FEATURED';
+  listingStatus?: 'available' | 'leased';
   type: 'Apartment' | 'Loft' | 'Studio' | 'Penthouse' | 'Townhouse';
   petFriendly: boolean;
   inUnitLaundry: boolean;
@@ -61,11 +62,28 @@ export interface TourBooking {
   date: string;
   time: string;
   type: 'in-person' | 'virtual';
-  status: 'Confirmed' | 'Pending' | 'Completed';
+  status: 'Confirmed' | 'Pending' | 'Completed' | 'Cancelled';
   hostName: string;
   tenantName?: string;
   tenantEmail?: string;
   tenantPhone?: string;
+}
+
+export interface RentalApplication {
+  id: string;
+  propertyId: string;
+  propertyTitle: string;
+  propertyImage: string;
+  propertyAddress: string;
+  tenantName: string;
+  tenantEmail: string;
+  tenantPhone: string;
+  message: string;
+  moveInDate?: string | null;
+  occupants: number;
+  employment?: string | null;
+  status: 'submitted' | 'approved' | 'declined';
+  createdAt?: string;
 }
 
 export interface NotificationItem {

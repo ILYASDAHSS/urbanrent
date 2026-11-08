@@ -20,29 +20,28 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const neighborhoods = [
     {
       name: 'Downtown San Francisco',
-      count: '18 Available',
       image: 'https://images.unsplash.com/photo-1506146332389-18140dc7b2fb?auto=format&fit=crop&w=600&q=80',
       query: 'San Francisco'
     },
     {
       name: 'River North Chicago',
-      count: '12 Available',
       image: 'https://images.unsplash.com/photo-1477959858617-67f30ac4ce78?auto=format&fit=crop&w=600&q=80',
       query: 'Chicago'
     },
     {
       name: 'Tribeca New York',
-      count: '15 Available',
       image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=600&q=80',
       query: 'New York'
     },
     {
       name: 'Downtown Los Angeles',
-      count: '9 Available',
       image: 'https://images.unsplash.com/photo-1580655653885-65763b2597d0?auto=format&fit=crop&w=600&q=80',
       query: 'Los Angeles'
     }
-  ];
+  ].map((neighborhood) => ({
+    ...neighborhood,
+    count: `${featuredProperties.filter((property) => property.city === neighborhood.query).length} available`,
+  }));
 
   return (
     <div className="space-y-10 pb-20">

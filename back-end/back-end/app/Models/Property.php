@@ -2,16 +2,17 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'host_id', 'title', 'address', 'city', 'neighborhood', 'zip_code', 'price',
-    'beds', 'baths', 'sqft', 'image', 'gallery', 'badge', 'type',
+    'beds', 'baths', 'sqft', 'image', 'gallery', 'badge', 'listing_status', 'type',
     'pet_friendly', 'in_unit_laundry', 'parking', 'balcony', 'gym', 'pool', 'ev_charging',
     'description', 'rating', 'review_count', 'lat', 'lng', 'amenities',
-    'deposit', 'lease_terms', 'available_date'
+    'deposit', 'lease_terms', 'available_date',
 ])]
 class Property extends Model
 {
@@ -39,5 +40,10 @@ class Property extends Model
     public function host(): BelongsTo
     {
         return $this->belongsTo(User::class, 'host_id');
+    }
+
+    public function favoritedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'property_favorites');
     }
 }

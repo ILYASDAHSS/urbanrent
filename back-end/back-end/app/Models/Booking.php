@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'user_id', 'property_id', 'date', 'time', 'type', 'status', 'host_name'
+    'user_id', 'property_id', 'date', 'time', 'type', 'status', 'host_name',
+    'tenant_name', 'tenant_phone',
 ])]
 class Booking extends Model
 {

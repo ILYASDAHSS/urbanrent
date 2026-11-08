@@ -3,17 +3,47 @@
 namespace App\Http\Controllers;
 
 use App\Models\Property;
+use App\Services\AddressGeocoder;
 use Illuminate\Http\Request;
 
 class PropertyController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $properties = Property::with('host')->get();
+        $query = Property::with('host');
+        $user = $request->user();
+
+        if ($user?->role !== 'admin') {
+            $query->where(function ($listings) use ($user) {
+                $listings->where('listing_status', 'available');
+                if ($user?->role === 'homeowner') {
+                    $listings->orWhere('host_id', $user->id);
+                }
+            });
+        }
+
+        $properties = $query->get();
         return response()->json($properties->map(fn($p) => $this->transformProperty($p)));
     }
 
-    public function store(Request $request)
+    public function geocode(Request $request, AddressGeocoder $geocoder)
+    {
+        $validated = $request->validate([
+            'address' => 'required|string|max:255',
+            'city' => 'required|string|max:255',
+            'neighborhood' => 'nullable|string|max:255',
+            'zipCode' => 'nullable|string|max:20',
+        ]);
+
+        return response()->json($geocoder->locate(
+            $validated['address'],
+            $validated['city'],
+            $validated['neighborhood'] ?? null,
+            $validated['zipCode'] ?? null,
+        ));
+    }
+
+    public function store(Request $request, AddressGeocoder $geocoder)
     {
         if ($request->user()->role !== 'homeowner' && $request->user()->role !== 'admin') {
             return response()->json(['message' => 'Only homeowners can list properties.'], 403);
@@ -48,8 +78,19 @@ class PropertyController extends Controller
             'availableDate' => 'nullable|string',
         ]);
 
-        $lat = $validated['lat'] ?? (37.7 + rand(0, 1000) / 10000);
-        $lng = $validated['lng'] ?? (-122.4 - rand(0, 1000) / 10000);
+        if (isset($validated['lat'], $validated['lng'])) {
+            $lat = (float) $validated['lat'];
+            $lng = (float) $validated['lng'];
+        } else {
+            $located = $geocoder->locate(
+                $validated['address'],
+                $validated['city'],
+                $validated['neighborhood'],
+                $validated['zipCode'],
+            );
+            $lat = $located['lat'];
+            $lng = $located['lng'];
+        }
         $image = $validated['image'] ?? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80';
         $gallery = $validated['gallery'] ?? [$image];
 
@@ -67,6 +108,7 @@ class PropertyController extends Controller
             'image' => $image,
             'gallery' => $gallery,
             'badge' => 'JUST LISTED',
+            'listing_status' => 'pending_review',
             'type' => $validated['type'],
             'pet_friendly' => (bool)($validated['petFriendly'] ?? false),
             'in_unit_laundry' => (bool)($validated['inUnitLaundry'] ?? false),
@@ -86,7 +128,52 @@ class PropertyController extends Controller
             'available_date' => $validated['availableDate'] ?? 'Immediately',
         ]);
 
+        $property->load('host');
+
         return response()->json($this->transformProperty($property), 201);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $property = Property::with('host')->findOrFail($id);
+
+        if ($request->user()->role !== 'admin' && $property->host_id !== $request->user()->id) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if (! in_array($property->listing_status, ['available', 'leased'], true)) {
+            return response()->json(['message' => 'This listing must be approved by an administrator before it can be changed.'], 422);
+        }
+
+        $validated = $request->validate([
+            'listingStatus' => 'required|string|in:available,leased',
+        ]);
+
+        $property->update([
+            'listing_status' => $validated['listingStatus'],
+            'badge' => $validated['listingStatus'] === 'leased' ? null : ($property->badge ?: 'AVAILABLE NOW'),
+        ]);
+
+        return response()->json($this->transformProperty($property->fresh('host')));
+    }
+
+    public function moderate(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'listingStatus' => 'required|string|in:available,rejected',
+        ]);
+        $property = Property::with('host')->findOrFail($id);
+
+        if ($property->listing_status !== 'pending_review') {
+            return response()->json(['message' => 'Only listings awaiting review can be moderated.'], 422);
+        }
+
+        $property->update([
+            'listing_status' => $validated['listingStatus'],
+            'badge' => $validated['listingStatus'] === 'available' ? 'JUST LISTED' : null,
+        ]);
+
+        return response()->json($this->transformProperty($property->fresh('host')));
     }
 
     public function destroy(Request $request, $id)
@@ -118,6 +205,7 @@ class PropertyController extends Controller
             'image' => $p->image,
             'gallery' => $p->gallery ?? [],
             'badge' => $p->badge,
+            'listingStatus' => $p->listing_status ?: 'available',
             'type' => $p->type,
             'petFriendly' => (bool)$p->pet_friendly,
             'inUnitLaundry' => (bool)$p->in_unit_laundry,

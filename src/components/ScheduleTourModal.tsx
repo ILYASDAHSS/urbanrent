@@ -3,40 +3,57 @@ import { Property, TourBooking } from '../types';
 
 interface ScheduleTourModalProps {
   property: Property | null;
+  user: { name?: string; phone?: string };
   onClose: () => void;
-  onConfirmBooking: (booking: TourBooking) => void;
+  onConfirmBooking: (booking: {
+    propertyId: string;
+    date: string;
+    time: string;
+    type: TourBooking['type'];
+    tenantName: string;
+    tenantPhone: string;
+  }) => Promise<TourBooking>;
 }
 
 export const ScheduleTourModal: React.FC<ScheduleTourModalProps> = ({
   property,
+  user,
   onClose,
   onConfirmBooking
 }) => {
   const [tourType, setTourType] = useState<'in-person' | 'virtual'>('in-person');
   const [selectedDate, setSelectedDate] = useState('2026-08-12');
   const [selectedTime, setSelectedTime] = useState('02:00 PM');
-  const [name, setName] = useState('Alex Rivera');
-  const [phone, setPhone] = useState('(555) 234-5678');
+  const [name, setName] = useState(user.name ?? '');
+  const [phone, setPhone] = useState(user.phone ?? '');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmationId, setConfirmationId] = useState('');
 
   if (!property) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newBooking: TourBooking = {
-      id: 'tour-' + Date.now(),
-      propertyId: property.id,
-      propertyTitle: property.title,
-      propertyImage: property.image,
-      date: selectedDate,
-      time: selectedTime,
-      type: tourType,
-      status: 'Confirmed',
-      hostName: property.host.name
-    };
+    setError('');
+    setIsSubmitting(true);
 
-    onConfirmBooking(newBooking);
-    setIsSuccess(true);
+    try {
+      const booking = await onConfirmBooking({
+        propertyId: property.id,
+        date: selectedDate,
+        time: selectedTime,
+        type: tourType,
+        tenantName: name,
+        tenantPhone: phone,
+      });
+      setConfirmationId(booking.id);
+      setIsSuccess(true);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not save your tour request.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -72,9 +89,7 @@ export const ScheduleTourModal: React.FC<ScheduleTourModalProps> = ({
               <p>
                 <strong>Host:</strong> {property.host.name}
               </p>
-              <p>
-                <strong>Confirmation ID:</strong> #UR-{Math.floor(100000 + Math.random() * 900000)}
-              </p>
+              <p><strong>Confirmation ID:</strong> #UR-{confirmationId}</p>
             </div>
 
             <button
@@ -86,6 +101,11 @@ export const ScheduleTourModal: React.FC<ScheduleTourModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[80vh]">
+            {error && (
+              <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700" role="alert">
+                {error}
+              </p>
+            )}
             {/* Property Preview Header */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/30">
               <img
@@ -193,9 +213,10 @@ export const ScheduleTourModal: React.FC<ScheduleTourModalProps> = ({
 
             <button
               type="submit"
-              className="w-full mt-4 py-3 rounded-xl bg-[#3525cd] text-white font-bold text-sm shadow-md hover:bg-[#4f46e5] active:scale-95 transition-all"
+              disabled={isSubmitting}
+              className="w-full mt-4 py-3 rounded-xl bg-[#3525cd] text-white font-bold text-sm shadow-md hover:bg-[#4f46e5] active:scale-95 transition-all disabled:opacity-60"
             >
-              Confirm Tour Appointment
+              {isSubmitting ? 'Saving Tour Request…' : 'Confirm Tour Appointment'}
             </button>
           </form>
         )}
