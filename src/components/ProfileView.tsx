@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { TourBooking, Property, RentalApplication } from '../types';
-import { api } from '../api';
+import { TourBooking, Property, RentalApplication, RentPayment } from '../types';
+import { api, resolveAssetUrl } from '../api';
 
 interface ProfileViewProps {
   user: any;
@@ -15,6 +15,14 @@ interface ProfileViewProps {
   applications: RentalApplication[];
   onUpdateApplicationStatus: (id: string, status: RentalApplication['status']) => Promise<void>;
   onUpdateProfile: (profile: Record<string, unknown>) => Promise<void>;
+  onUpdateAvatar: (file: File) => Promise<void>;
+  payments: RentPayment[];
+  onPayRent: (applicationId: string, method: RentPayment['method']) => Promise<void>;
+  onRefreshPayments: () => Promise<void>;
+  onConfirmRentPayment: (id: string) => Promise<void>;
+  onModerateProperty: (id: string, listingStatus: 'available' | 'rejected') => Promise<void>;
+  onUpdateUserSuspension: (id: number | string, suspended: boolean) => Promise<void>;
+  onDownloadMonthlyReport: (month: string) => Promise<void>;
   // Admin-specific props
   adminUsers?: any[];
   onUpdateUserRole?: (id: number | string, role: string) => Promise<void>;
@@ -34,14 +42,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   applications,
   onUpdateApplicationStatus,
   onUpdateProfile,
+  onUpdateAvatar,
+  payments,
+  onPayRent,
+  onRefreshPayments,
+  onConfirmRentPayment,
+  onModerateProperty,
+  onUpdateUserSuspension,
+  onDownloadMonthlyReport,
   adminUsers = [],
   onUpdateUserRole,
   onDeleteUser,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'listings' | 'requests' | 'applications' | 'users' | 'stats'>('listings');
+  const [activeSubTab, setActiveSubTab] = useState<'listings' | 'requests' | 'applications' | 'users' | 'stats' | 'reports'>('listings');
   const [adminStats, setAdminStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const runAction = async (action: () => Promise<void>) => {
     setActionError('');
@@ -52,10 +70,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  const handleAvatarSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsAvatarUploading(true);
+    try {
+      await onUpdateAvatar(file);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not upload your profile photo.');
+    } finally {
+      setIsAvatarUploading(false);
+    }
+  };
+
   // Filter homeowner properties
   const myProperties = properties.filter(
     (p) => p.host && p.host.email === user.email
   );
+  const pendingProperties = properties.filter((property) => property.listingStatus === 'pending_review');
 
   // Fetch admin stats if user is admin
   useEffect(() => {
@@ -112,11 +146,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Profile Header */}
       <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm flex flex-col sm:flex-row items-center gap-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-24 h-24 bg-[#3525cd]/5 rounded-full -mr-12 -mt-12 blur-lg" />
-        <img
-          src={user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-          alt={user.name}
-          className="w-20 h-20 rounded-full object-cover border-4 border-[#3525cd]/20 relative z-10"
-        />
+        <div className="relative z-10 shrink-0">
+          <img
+            src={resolveAssetUrl(user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80')}
+            alt={user.name}
+            className="w-20 h-20 rounded-full object-cover border-4 border-[#3525cd]/20"
+          />
+          <label className={`absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-white transition-opacity ${isAvatarUploading ? 'cursor-wait opacity-100' : 'cursor-pointer opacity-0 hover:opacity-100 focus-within:opacity-100'}`}>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              aria-label="Choose a new profile photo"
+              disabled={isAvatarUploading}
+              onChange={(event) => void handleAvatarSelection(event)}
+            />
+            <span className="material-symbols-outlined" aria-hidden="true">
+              {isAvatarUploading ? 'progress_activity' : 'photo_camera'}
+            </span>
+          </label>
+        </div>
         <div className="text-center sm:text-left flex-1 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-center sm:justify-start gap-2.5">
             <h1 className="text-2xl font-bold text-[#191c1e]">{user.name}</h1>
@@ -132,6 +181,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {user.city ? ` • Based in ${user.city}` : ''}
             {user.occupation ? ` • ${user.occupation}` : ''}
           </p>
+          <label className="mt-2 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-[#3525cd] hover:underline">
+            <span>{isAvatarUploading ? 'Uploading photo…' : 'Change profile photo'}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              aria-label="Choose a new profile photo"
+              disabled={isAvatarUploading}
+              onChange={(event) => void handleAvatarSelection(event)}
+            />
+          </label>
         </div>
 
         {actionError && (
@@ -223,6 +283,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             title="Your rental applications"
             empty="You have not applied to a home yet. Open a listing and choose Apply Now."
             applications={applications}
+            payments={payments}
+            onPayRent={onPayRent}
+            onRefreshPayments={onRefreshPayments}
           />
         </div>
       )}
@@ -309,11 +372,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <p className="text-[11px] text-[#777587] line-clamp-1">{p.address}, {p.city}</p>
                           <p className="text-xs font-extrabold text-[#3525cd] mt-1">${p.price}/mo</p>
                           <p className="text-[11px] font-bold uppercase text-[#005236]">
-                            {p.listingStatus === 'leased' ? 'Leased' : 'On the market'}
+                            {p.listingStatus === 'pending_review'
+                              ? 'Awaiting admin approval'
+                              : p.listingStatus === 'rejected'
+                                ? 'Not approved'
+                                : p.listingStatus === 'leased' ? 'Leased' : 'On the market'}
                           </p>
                         </div>
                         <div className="flex justify-end gap-2 mt-2">
-                          <button
+                          {(p.listingStatus === 'available' || p.listingStatus === 'leased') && <button
                             onClick={() => {
                               void runAction(() => onUpdatePropertyStatus(
                                 p.id,
@@ -323,7 +390,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                             className="px-2.5 py-1 bg-[#f7f9fb] border border-[#c7c4d8]/40 text-[#191c1e] rounded-lg text-[10px] font-bold"
                           >
                             {p.listingStatus === 'leased' ? 'Relist' : 'Mark leased'}
-                          </button>
+                          </button>}
                           <button
                             onClick={() => { void runAction(() => onDeleteProperty(p.id)); }}
                             className="px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 text-[#ba1a1a] rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1"
@@ -347,6 +414,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               applications={applications}
               onUpdateStatus={onUpdateApplicationStatus}
               runAction={runAction}
+              payments={payments}
+              onRefreshPayments={onRefreshPayments}
+              onConfirmPayment={onConfirmRentPayment}
             />
           )}
 
@@ -434,7 +504,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {user.role === 'admin' && (
         <div className="space-y-6">
           {/* Sub Navigation */}
-          <div className="flex border-b border-[#c7c4d8]/20 gap-4">
+          <div className="flex flex-wrap border-b border-[#c7c4d8]/20 gap-4">
             <button
               onClick={() => setActiveSubTab('stats')}
               className={`pb-3 text-sm font-bold transition-all border-b-2 px-1 flex items-center gap-1.5 ${
@@ -455,7 +525,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               }`}
             >
               <span className="material-symbols-outlined text-sm">apartment</span>
-              All Properties ({properties.length})
+              Properties ({properties.length})
             </button>
             <button
               onClick={() => setActiveSubTab('users')}
@@ -479,6 +549,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <span className="material-symbols-outlined text-sm">calendar_month</span>
               All Bookings ({bookings.length})
             </button>
+            <button
+              onClick={() => setActiveSubTab('applications')}
+              className={`pb-3 text-sm font-bold transition-all border-b-2 px-1 flex items-center gap-1.5 ${
+                activeSubTab === 'applications'
+                  ? 'border-[#3525cd] text-[#3525cd]'
+                  : 'border-transparent text-[#777587] hover:text-[#191c1e]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">description</span>
+              Applications ({applications.length})
+            </button>
+            <button
+              onClick={() => setActiveSubTab('reports')}
+              className={`pb-3 text-sm font-bold transition-all border-b-2 px-1 flex items-center gap-1.5 ${
+                activeSubTab === 'reports'
+                  ? 'border-[#3525cd] text-[#3525cd]'
+                  : 'border-transparent text-[#777587] hover:text-[#191c1e]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              Monthly Reports
+            </button>
           </div>
 
           {/* Tab 0: Stats */}
@@ -489,7 +581,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className="w-8 h-8 border-4 border-[#3525cd] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : adminStats ? (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                   <div className="p-5 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm text-center">
                     <span className="material-symbols-outlined text-3xl text-[#3525cd] mb-1.5">group</span>
                     <span className="text-[#777587] block text-xs font-bold uppercase mb-1">Total Users</span>
@@ -515,12 +607,67 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
 
                   <div className="p-5 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm text-center">
+                    <span className="material-symbols-outlined text-3xl text-amber-600 mb-1.5">pending_actions</span>
+                    <span className="text-[#777587] block text-xs font-bold uppercase mb-1">Needs Review</span>
+                    <span className="text-3xl font-extrabold text-[#191c1e]">{adminStats.pendingProperties ?? 0}</span>
+                  </div>
+
+                  <div className="p-5 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm text-center">
                     <span className="material-symbols-outlined text-3xl text-orange-600 mb-1.5">calendar_month</span>
                     <span className="text-[#777587] block text-xs font-bold uppercase mb-1">Tours Booked</span>
                     <span className="text-3xl font-extrabold text-[#191c1e]">{adminStats.totalBookings}</span>
                   </div>
                 </div>
               ) : null}
+              <section className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-base text-[#191c1e]">Listings awaiting approval</h3>
+                    <p className="text-xs text-[#777587]">
+                      {pendingProperties.length} listing{pendingProperties.length === 1 ? '' : 's'} need review
+                    </p>
+                  </div>
+                  {pendingProperties.length > 0 && (
+                    <button
+                      onClick={() => setActiveSubTab('listings')}
+                      className="text-xs font-bold text-[#3525cd] hover:underline"
+                    >
+                      View all properties
+                    </button>
+                  )}
+                </div>
+                {pendingProperties.length === 0 ? (
+                  <p className="py-3 text-center text-sm text-[#777587]">No listings are waiting for approval.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {pendingProperties.map((property) => (
+                      <div key={property.id} className="flex flex-col gap-3 rounded-xl bg-[#f7f9fb] p-3 sm:flex-row sm:items-center">
+                        <img src={property.image} alt="" className="h-14 w-20 rounded-lg object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <h4 className="truncate text-sm font-bold text-[#191c1e]">{property.title}</h4>
+                          <p className="text-xs text-[#777587]">
+                            {property.city} • {property.host.name} • ${property.price.toLocaleString()}/mo
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { void runAction(() => onModerateProperty(property.id, 'available')); }}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => { void runAction(() => onModerateProperty(property.id, 'rejected')); }}
+                            className="rounded-lg border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-800"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </div>
           )}
 
@@ -539,6 +686,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <th className="py-3 px-4">City</th>
                       <th className="py-3 px-4">Price</th>
                       <th className="py-3 px-4">Host</th>
+                      <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -552,7 +700,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         <td className="py-3 px-4 font-semibold text-[#464555]">{p.city}</td>
                         <td className="py-3 px-4 font-bold text-[#3525cd]">${p.price}</td>
                         <td className="py-3 px-4 text-[#777587]">{p.host ? p.host.name : 'Unknown'}</td>
+                        <td className="py-3 px-4 font-bold">{p.listingStatus?.replace('_', ' ') || 'available'}</td>
                         <td className="py-3 px-4 text-right">
+                          {p.listingStatus === 'pending_review' && (
+                            <>
+                              <button
+                                onClick={() => { void runAction(() => onModerateProperty(p.id, 'available')); }}
+                                className="px-2.5 py-1 text-xs font-bold bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-lg mr-2"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => { void runAction(() => onModerateProperty(p.id, 'rejected')); }}
+                                className="px-2.5 py-1 text-xs font-bold bg-amber-50 border border-amber-100 text-amber-700 rounded-lg mr-2"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => onDeleteProperty(p.id)}
                             className="px-2.5 py-1 text-xs font-bold bg-red-50 border border-red-100 hover:border-red-200 text-[#ba1a1a] rounded-lg transition-all active:scale-95"
@@ -590,7 +755,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <tr key={u.id} className="border-b border-[#c7c4d8]/10 hover:bg-[#f7f9fb]">
                         <td className="py-3 px-4 flex items-center gap-2">
                           <img
-                            src={u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=30' }
+                            src={resolveAssetUrl(u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=30' )}
                             alt=""
                             className="w-7 h-7 rounded-full object-cover"
                           />
@@ -614,6 +779,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           </select>
                         </td>
                         <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              void runAction(() => onUpdateUserSuspension(u.id, !u.is_suspended));
+                            }}
+                            disabled={u.id === user.id}
+                            className={`px-2.5 py-1 text-xs font-bold border rounded-lg mr-2 disabled:opacity-50 ${
+                              u.is_suspended
+                                ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                                : 'bg-amber-50 border-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {u.is_suspended ? 'Reinstate' : 'Suspend'}
+                          </button>
                           <button
                             onClick={() => {
                               if (onDeleteUser) {
@@ -672,17 +850,72 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       }`}>
                         {b.status}
                       </span>
+                      {b.status === 'Pending' && (
+                        <button
+                          onClick={() => { void runAction(() => onUpdateBookingStatus(b.id, 'Confirmed')); }}
+                          className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold transition-all active:scale-95"
+                        >
+                          Confirm
+                        </button>
+                      )}
+                      {b.status === 'Confirmed' && (
+                        <button
+                          onClick={() => { void runAction(() => onUpdateBookingStatus(b.id, 'Completed')); }}
+                          className="px-3 py-1 bg-blue-600 text-white rounded-lg font-bold transition-all active:scale-95"
+                        >
+                          Mark complete
+                        </button>
+                      )}
                       {b.status !== 'Cancelled' && b.status !== 'Completed' && (
                         <button
                           onClick={() => { void runAction(() => onCancelBooking(b.id)); }}
                           className="px-3 py-1 bg-white border border-red-100 hover:bg-red-50 rounded-lg font-bold text-[#ba1a1a] transition-all active:scale-95"
                         >
-                          Cancel Booking
+                          Cancel
                         </button>
                       )}
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'applications' && (
+            <ApplicationList
+              title="Platform rental applications"
+              empty="There are no rental applications yet."
+              applications={applications}
+              onUpdateStatus={onUpdateApplicationStatus}
+              runAction={runAction}
+              payments={payments}
+              onRefreshPayments={onRefreshPayments}
+              onConfirmPayment={onConfirmRentPayment}
+            />
+          )}
+
+          {activeSubTab === 'reports' && (
+            <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
+              <h3 className="font-bold text-base text-[#191c1e]">Monthly properties and rent transactions</h3>
+              <p className="text-sm text-[#777587]">
+                Download a CSV containing all property listings and rent payments for the selected month.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                <label className="text-xs font-bold text-[#464555]">
+                  Transaction month
+                  <input
+                    type="month"
+                    value={reportMonth}
+                    onChange={(event) => setReportMonth(event.target.value)}
+                    className="mt-1 block rounded-xl border border-[#c7c4d8]/50 px-3 py-2 font-normal"
+                  />
+                </label>
+                <button
+                  onClick={() => { void runAction(() => onDownloadMonthlyReport(reportMonth)); }}
+                  className="px-4 py-2 rounded-xl bg-[#3525cd] text-white text-sm font-bold"
+                >
+                  Export monthly CSV
+                </button>
               </div>
             </div>
           )}
@@ -796,50 +1029,111 @@ const ApplicationList: React.FC<{
   title: string;
   empty: string;
   applications: RentalApplication[];
+  payments?: RentPayment[];
+  onPayRent?: (applicationId: string, method: RentPayment['method']) => Promise<void>;
+  onRefreshPayments?: () => Promise<void>;
+  onConfirmPayment?: (id: string) => Promise<void>;
   onUpdateStatus?: (id: string, status: RentalApplication['status']) => Promise<void>;
   runAction?: (action: () => Promise<void>) => Promise<void>;
-}> = ({ title, empty, applications, onUpdateStatus, runAction }) => (
-  <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
-    <h2 className="font-bold text-lg text-[#191c1e] border-b border-[#c7c4d8]/20 pb-3">{title}</h2>
-    {applications.length === 0 ? (
-      <p className="text-xs text-[#777587] py-6 text-center">{empty}</p>
-    ) : (
-      <div className="space-y-3">
-        {applications.map((application) => (
-          <div key={application.id} className="p-4 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20 space-y-2">
-            <div className="flex justify-between gap-3">
-              <div>
-                <h3 className="font-bold text-sm text-[#191c1e]">{application.propertyTitle}</h3>
-                <p className="text-[11px] text-[#777587]">{application.propertyAddress}</p>
+}> = ({ title, empty, applications, payments = [], onPayRent, onRefreshPayments, onConfirmPayment, onUpdateStatus, runAction }) => {
+  const currentPeriod = new Date().toISOString().slice(0, 7);
+
+  return (
+    <div className="p-6 rounded-2xl bg-white border border-[#c7c4d8]/30 shadow-sm space-y-4">
+      <h2 className="font-bold text-lg text-[#191c1e] border-b border-[#c7c4d8]/20 pb-3">{title}</h2>
+      {applications.length === 0 ? (
+        <p className="text-xs text-[#777587] py-6 text-center">{empty}</p>
+      ) : (
+        <div className="space-y-3">
+          {applications.map((application) => {
+            const payment = payments.find((item) =>
+              item.applicationId === application.id && item.period === currentPeriod
+            );
+            const canStartPayment = !payment || payment.status === 'failed';
+            const canResumeCard = payment?.status === 'pending' && payment.method === 'card';
+
+            return (
+              <div key={application.id} className="p-4 rounded-xl bg-[#f7f9fb] border border-[#c7c4d8]/20 space-y-2">
+                <div className="flex justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-sm text-[#191c1e]">{application.propertyTitle}</h3>
+                    <p className="text-[11px] text-[#777587]">{application.propertyAddress}</p>
+                  </div>
+                  <span className="text-[11px] font-bold uppercase text-[#3525cd]">{application.status}</span>
+                </div>
+                <p className="text-xs text-[#464555]">{application.message}</p>
+                <p className="text-[11px] text-[#777587]">
+                  {application.tenantName}
+                  {application.employment ? ` • ${application.employment}` : ''}
+                  {application.moveInDate ? ` • Move-in ${application.moveInDate}` : ''}
+                  {` • ${application.occupants} occupant${application.occupants === 1 ? '' : 's'}`}
+                </p>
+                {application.status === 'submitted' && onUpdateStatus && runAction && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { void runAction(() => onUpdateStatus(application.id, 'approved')); }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => { void runAction(() => onUpdateStatus(application.id, 'declined')); }}
+                      className="px-3 py-1.5 rounded-lg border border-red-200 text-[#ba1a1a] text-xs font-bold"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+                {payment && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#c7c4d8]/20 pt-2">
+                    <p className="text-xs text-[#464555]">
+                      {payment.period} rent: ${(payment.amountCents / 100).toLocaleString()} • {payment.method === 'card' ? 'Card' : 'In person'} • {payment.status}
+                    </p>
+                    {payment.status === 'pending' && payment.method === 'in_person' && onConfirmPayment && runAction && (
+                      <button
+                        onClick={() => { void runAction(() => onConfirmPayment(payment.id)); }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                      >
+                        Confirm rent received
+                      </button>
+                    )}
+                    {payment.status === 'pending' && payment.method === 'card' && onRefreshPayments && runAction && (
+                      <button
+                        onClick={() => { void runAction(onRefreshPayments); }}
+                        className="px-3 py-1.5 rounded-lg border border-[#c7c4d8]/50 text-xs font-bold text-[#464555]"
+                      >
+                        Refresh payment status
+                      </button>
+                    )}
+                  </div>
+                )}
+                {application.status === 'approved' && onPayRent && runAction
+                  && (canStartPayment || canResumeCard) && (
+                  <div className="flex flex-wrap gap-2 border-t border-[#c7c4d8]/20 pt-2">
+                    <span className="w-full text-xs font-semibold text-[#464555]">
+                      Pay this month’s rent:
+                    </span>
+                    <button
+                      onClick={() => { void runAction(() => onPayRent(application.id, 'card')); }}
+                      className="px-3 py-1.5 rounded-lg bg-[#3525cd] text-white text-xs font-bold"
+                    >
+                      {canResumeCard ? 'Resume card checkout' : 'Pay by card'}
+                    </button>
+                    {canStartPayment && (
+                      <button
+                        onClick={() => { void runAction(() => onPayRent(application.id, 'in_person')); }}
+                        className="px-3 py-1.5 rounded-lg border border-[#3525cd] text-[#3525cd] text-xs font-bold"
+                      >
+                        Pay in person
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <span className="text-[11px] font-bold uppercase text-[#3525cd]">{application.status}</span>
-            </div>
-            <p className="text-xs text-[#464555]">{application.message}</p>
-            <p className="text-[11px] text-[#777587]">
-              {application.tenantName}
-              {application.employment ? ` • ${application.employment}` : ''}
-              {application.moveInDate ? ` • Move-in ${application.moveInDate}` : ''}
-              {` • ${application.occupants} occupant${application.occupants === 1 ? '' : 's'}`}
-            </p>
-            {application.status === 'submitted' && onUpdateStatus && runAction && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { void runAction(() => onUpdateStatus(application.id, 'approved')); }}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => { void runAction(() => onUpdateStatus(application.id, 'declined')); }}
-                  className="px-3 py-1.5 rounded-lg border border-red-200 text-[#ba1a1a] text-xs font-bold"
-                >
-                  Decline
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-);
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};

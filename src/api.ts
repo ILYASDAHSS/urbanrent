@@ -1,6 +1,13 @@
-import { Property, RentalApplication, TourBooking } from './types';
+import { Property, RentalApplication, RentPayment, TourBooking } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+
+export const resolveAssetUrl = (url: string): string => {
+  if (!url.startsWith('/storage/')) return url;
+
+  const apiOrigin = new URL(API_BASE_URL, window.location.origin).origin;
+  return new URL(url, apiOrigin).toString();
+};
 
 class ApiService {
   private token: string | null = localStorage.getItem('auth_token');
@@ -122,6 +129,18 @@ class ApiService {
     return user;
   }
 
+  async uploadAvatar(file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const user = await this.request('/profile/avatar', {
+      method: 'POST',
+      body: formData,
+    });
+    this.setAuth(this.token, user);
+    return user;
+  }
+
   // Properties APIs
   async getProperties(): Promise<Property[]> {
     return this.request('/properties');
@@ -153,6 +172,13 @@ class ApiService {
     });
   }
 
+  async moderateProperty(id: string, listingStatus: 'available' | 'rejected'): Promise<Property> {
+    return this.request(`/admin/properties/${id}/moderation`, {
+      method: 'PUT',
+      body: JSON.stringify({ listingStatus }),
+    });
+  }
+
   async deleteProperty(id: string): Promise<void> {
     await this.request(`/properties/${id}`, { method: 'DELETE' });
   }
@@ -179,6 +205,21 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify({ status }),
     });
+  }
+
+  async getPayments(): Promise<RentPayment[]> {
+    return this.request('/payments');
+  }
+
+  async createRentPayment(applicationId: string, method: RentPayment['method']): Promise<RentPayment> {
+    return this.request(`/applications/${applicationId}/payments`, {
+      method: 'POST',
+      body: JSON.stringify({ method }),
+    });
+  }
+
+  async confirmInPersonPayment(id: string): Promise<RentPayment> {
+    return this.request(`/payments/${id}/confirm`, { method: 'PUT' });
   }
 
   async getFavoritePropertyIds(): Promise<string[]> {
@@ -244,6 +285,36 @@ class ApiService {
 
   async deleteUser(id: number | string): Promise<void> {
     await this.request(`/admin/users/${id}`, { method: 'DELETE' });
+  }
+
+  async updateUserSuspension(id: number | string, suspended: boolean): Promise<any> {
+    return this.request(`/admin/users/${id}/suspension`, {
+      method: 'PUT',
+      body: JSON.stringify({ suspended }),
+    });
+  }
+
+  async downloadMonthlyReport(month: string): Promise<void> {
+    const headers = new Headers({ Accept: 'text/csv' });
+    if (this.token) {
+      headers.set('Authorization', `Bearer ${this.token}`);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/admin/reports/monthly?month=${encodeURIComponent(month)}`, {
+      headers,
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || 'Could not download the monthly report.');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `urbanrent-monthly-report-${month}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 }
 

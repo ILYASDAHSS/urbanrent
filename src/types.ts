@@ -12,7 +12,7 @@ export interface Property {
   image: string;
   gallery: string[];
   badge?: 'AVAILABLE NOW' | 'SPECIAL OFFER' | 'JUST LISTED' | 'FEATURED';
-  listingStatus?: 'available' | 'leased';
+  listingStatus?: 'pending_review' | 'available' | 'leased' | 'rejected';
   type: 'Apartment' | 'Loft' | 'Studio' | 'Penthouse' | 'Townhouse';
   petFriendly: boolean;
   inUnitLaundry: boolean;
@@ -84,6 +84,23 @@ export interface RentalApplication {
   employment?: string | null;
   status: 'submitted' | 'approved' | 'declined';
   createdAt?: string;
+}
+
+export interface RentPayment {
+  id: string;
+  applicationId: string;
+  propertyId: string;
+  propertyTitle: string;
+  ownerName: string;
+  tenantName: string;
+  tenantEmail: string;
+  period: string;
+  amountCents: number;
+  currency: string;
+  method: 'card' | 'in_person';
+  status: 'pending' | 'paid' | 'failed';
+  paidAt?: string | null;
+  checkoutUrl?: string;
 }
 
 export interface NotificationItem {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Property } from '../types';
+import { resolveAssetUrl } from '../api';
 
 interface PropertyDetailModalProps {
   property: Property | null;
@@ -28,6 +29,8 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
 }) => {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [showContactHost, setShowContactHost] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
   const [showApplication, setShowApplication] = useState(false);
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
   const [applicationError, setApplicationError] = useState('');
@@ -47,6 +50,43 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   if (!property) return null;
 
   const moveInCost = property.price + property.deposit;
+  const shareUrl = new URL(window.location.href);
+  shareUrl.searchParams.set('property', property.id);
+  const encodedShareUrl = encodeURIComponent(shareUrl.toString());
+
+  const copyShareLink = async (): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(shareUrl.toString());
+      setShareMessage('Listing link copied.');
+      return true;
+    } catch {
+      setShareMessage(`Clipboard unavailable. Copy this link: ${shareUrl.toString()}`);
+      return false;
+    }
+  };
+
+  const shareOnInstagram = async () => {
+    setShareMessage('');
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: property.title,
+          text: `Check out ${property.title} on UrbanRent!`,
+          url: shareUrl.toString(),
+        });
+        setShowShareOptions(false);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+
+    const copied = await copyShareLink();
+    window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
+    if (copied) {
+      setShareMessage('Link copied. Paste it into your Instagram post or message.');
+    }
+  };
 
   const handleApply = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -98,17 +138,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
               </span>
             </button>
             <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: property.title,
-                    text: `Check out ${property.title} on UrbanRent!`,
-                    url: window.location.href
-                  });
-                } else {
-                  alert('Link copied to clipboard!');
-                }
-              }}
+              onClick={() => { setShareMessage(''); setShowShareOptions(true); }}
               className="p-2 rounded-full hover:bg-[#eceef0] text-[#777587] transition-colors"
               title="Share property"
             >
@@ -122,6 +152,50 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             </button>
           </div>
         </div>
+
+        {showShareOptions && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="share-listing-title">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 id="share-listing-title" className="font-bold text-lg text-[#191c1e]">Share this listing</h2>
+                <button onClick={() => setShowShareOptions(false)} className="rounded-full p-1 hover:bg-[#eceef0]" aria-label="Close share options">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <a
+                href={`https://www.facebook.com/sharer/sharer.php?u=${encodedShareUrl}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setShowShareOptions(false)}
+                className="block rounded-xl bg-[#1877f2] px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                Share on Facebook
+              </a>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`Check out ${property.title} on UrbanRent! ${shareUrl}`)}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setShowShareOptions(false)}
+                className="block rounded-xl bg-[#25d366] px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                Share on WhatsApp
+              </a>
+              <button
+                onClick={() => { void shareOnInstagram(); }}
+                className="w-full rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 px-4 py-3 text-sm font-bold text-white"
+              >
+                Share on Instagram
+              </button>
+              <button
+                onClick={() => { void copyShareLink(); }}
+                className="w-full rounded-xl border border-[#c7c4d8]/50 px-4 py-3 text-sm font-bold text-[#3525cd]"
+              >
+                Copy listing link
+              </button>
+              {shareMessage && <p className="break-all text-xs text-[#464555]" role="status">{shareMessage}</p>}
+            </div>
+          </div>
+        )}
 
         {/* Modal Scroll Content */}
         <div className="overflow-y-auto p-6 space-y-6">
@@ -278,7 +352,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
           <div className="p-4 rounded-2xl bg-[#f7f9fb] border border-[#c7c4d8]/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-3">
               <img
-                src={property.host.avatar}
+                src={resolveAssetUrl(property.host.avatar)}
                 alt={property.host.name}
                 className="w-12 h-12 rounded-full object-cover border-2 border-[#3525cd]"
               />

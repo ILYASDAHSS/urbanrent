@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Property, FilterState, TourBooking, NotificationItem, RentalApplication } from './types';
+import { Property, FilterState, TourBooking, NotificationItem, RentalApplication, RentPayment } from './types';
 import { INITIAL_NOTIFICATIONS } from './data/properties';
 import { api } from './api';
 import { AuthView } from './components/AuthView';
@@ -44,6 +44,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [bookings, setBookings] = useState<TourBooking[]>([]);
   const [applications, setApplications] = useState<RentalApplication[]>([]);
+  const [payments, setPayments] = useState<RentPayment[]>([]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -70,6 +71,7 @@ export default function App() {
       setBookings([]);
       setFavorites([]);
       setApplications([]);
+      setPayments([]);
       setAdminUsers([]);
       setIsDataLoading(false);
       return;
@@ -80,25 +82,51 @@ export default function App() {
     setDataError('');
 
     const adminUsersRequest = user.role === 'admin' ? api.getAdminUsers() : Promise.resolve([]);
-    Promise.all([
+    Promise.allSettled([
       api.getProperties(),
       api.getBookings(),
       api.getFavoritePropertyIds(),
       api.getApplications(),
+      api.getPayments(),
       adminUsersRequest,
     ])
-      .then(([storedProperties, storedBookings, storedFavorites, storedApplications, storedAdminUsers]) => {
-        if (isCurrent) {
-          setProperties(storedProperties);
-          setBookings(storedBookings);
-          setFavorites(storedFavorites);
-          setApplications(storedApplications);
-          setAdminUsers(storedAdminUsers);
+      .then(([propertiesResult, bookingsResult, favoritesResult, applicationsResult, paymentsResult, adminUsersResult]) => {
+        if (!isCurrent) return;
+
+        const failures: string[] = [];
+        if (propertiesResult.status === 'fulfilled') {
+          setProperties(propertiesResult.value);
+        } else {
+          failures.push('properties');
         }
-      })
-      .catch((error: unknown) => {
-        if (isCurrent) {
-          setDataError(error instanceof Error ? error.message : 'Could not load saved data.');
+        if (bookingsResult.status === 'fulfilled') {
+          setBookings(bookingsResult.value);
+        } else {
+          failures.push('bookings');
+        }
+        if (favoritesResult.status === 'fulfilled') {
+          setFavorites(favoritesResult.value);
+        } else {
+          failures.push('favorites');
+        }
+        if (applicationsResult.status === 'fulfilled') {
+          setApplications(applicationsResult.value);
+        } else {
+          failures.push('applications');
+        }
+        if (paymentsResult.status === 'fulfilled') {
+          setPayments(paymentsResult.value);
+        } else {
+          failures.push('rent payments');
+        }
+        if (adminUsersResult.status === 'fulfilled') {
+          setAdminUsers(adminUsersResult.value);
+        } else {
+          failures.push('admin users');
+        }
+
+        if (failures.length > 0) {
+          setDataError(`Could not load ${failures.join(', ')}. Other dashboard data is still available.`);
         }
       })
       .finally(() => {
@@ -111,6 +139,22 @@ export default function App() {
       isCurrent = false;
     };
   }, [user]);
+
+  useEffect(() => {
+    const sharedPropertyId = new URLSearchParams(window.location.search).get('property');
+    if (!sharedPropertyId) return;
+
+    const sharedProperty = properties.find((property) =>
+      property.id === sharedPropertyId && property.listingStatus === 'available'
+    );
+    if (sharedProperty) {
+      setActiveTab('search');
+      setSelectedProperty(sharedProperty);
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('property');
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, [properties]);
 
   const handleAuthSuccess = (authUser: any) => {
     setUser(authUser);
@@ -139,7 +183,7 @@ export default function App() {
       minPrice: Math.min(prev.minPrice, newProperty.price),
       maxPrice: Math.max(prev.maxPrice, newProperty.price),
     }));
-    setDataNotice(`${newProperty.title} is live. Renters can see it in search and on the map.`);
+    setDataNotice(`${newProperty.title} was submitted for administrator approval. It will appear in search after review.`);
     setActiveTab('search');
   };
 
@@ -153,6 +197,7 @@ export default function App() {
     setProperties((prev) => prev.filter((p) => p.id !== id));
     setBookings((prev) => prev.filter((booking) => booking.propertyId !== id));
     setFavorites((prev) => prev.filter((favoriteId) => favoriteId !== id));
+    setPayments((prev) => prev.filter((payment) => payment.propertyId !== id));
   };
 
   const handleUpdateBookingStatus = async (id: string, status: string) => {
@@ -194,6 +239,45 @@ export default function App() {
     setUser(updatedUser);
   };
 
+  const handlePayRent = async (applicationId: string, method: RentPayment['method']) => {
+    const payment = await api.createRentPayment(applicationId, method);
+    setPayments((previous) => [
+      ...previous.filter((item) => item.id !== payment.id),
+      payment,
+    ]);
+    if (payment.checkoutUrl) {
+      window.location.assign(payment.checkoutUrl);
+    }
+  };
+
+  const handleConfirmRentPayment = async (id: string) => {
+    const updated = await api.confirmInPersonPayment(id);
+    setPayments((previous) => previous.map((payment) => payment.id === id ? updated : payment));
+  };
+
+  const handleRefreshPayments = async () => {
+    setPayments(await api.getPayments());
+  };
+
+  const handleModerateProperty = async (id: string, listingStatus: 'available' | 'rejected') => {
+    const updated = await api.moderateProperty(id, listingStatus);
+    setProperties((previous) => previous.map((property) => property.id === id ? updated : property));
+  };
+
+  const handleUpdateUserSuspension = async (id: number | string, suspended: boolean) => {
+    const updatedUser = await api.updateUserSuspension(id, suspended);
+    setAdminUsers((previous) => previous.map((item) => item.id === updatedUser.id ? updatedUser : item));
+  };
+
+  const handleDownloadMonthlyReport = async (month: string) => {
+    await api.downloadMonthlyReport(month);
+  };
+
+  const handleUpdateAvatar = async (file: File) => {
+    const updatedUser = await api.uploadAvatar(file);
+    setUser(updatedUser);
+  };
+
   // Initial Filter State
   const initialFilterState: FilterState = {
     searchQuery: '',
@@ -232,7 +316,7 @@ export default function App() {
   };
 
   const browseProperties = useMemo(
-    () => properties.filter((property) => property.listingStatus !== 'leased'),
+    () => properties.filter((property) => property.listingStatus === 'available'),
     [properties]
   );
 
@@ -614,8 +698,16 @@ export default function App() {
             onUpdateUserRole={handleUpdateUserRole}
             onDeleteUser={handleDeleteUser}
             applications={applications}
+            payments={payments}
             onUpdateApplicationStatus={handleUpdateApplicationStatus}
             onUpdateProfile={handleUpdateProfile}
+            onUpdateAvatar={handleUpdateAvatar}
+            onPayRent={handlePayRent}
+            onRefreshPayments={handleRefreshPayments}
+            onConfirmRentPayment={handleConfirmRentPayment}
+            onModerateProperty={handleModerateProperty}
+            onUpdateUserSuspension={handleUpdateUserSuspension}
+            onDownloadMonthlyReport={handleDownloadMonthlyReport}
           />
         )}
       </main>
