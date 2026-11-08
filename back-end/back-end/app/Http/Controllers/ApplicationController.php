@@ -37,8 +37,8 @@ class ApplicationController extends Controller
         ]);
 
         $property = Property::findOrFail($validated['propertyId']);
-        if ($property->listing_status === 'leased') {
-            return response()->json(['message' => 'This home is no longer available.'], 422);
+        if ($property->listing_status !== 'available') {
+            return response()->json(['message' => 'This home is not currently accepting applications.'], 422);
         }
 
         $open = RentalApplication::where('property_id', $property->id)

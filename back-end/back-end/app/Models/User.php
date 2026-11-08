@@ -15,6 +15,7 @@ use Laravel\Sanctum\HasApiTokens;
 #[Fillable([
     'name', 'email', 'password', 'role', 'avatar', 'phone', 'is_superhost',
     'city', 'occupation', 'bio', 'move_in_date', 'budget_min', 'budget_max', 'pets', 'household_size',
+    'is_suspended',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -33,6 +34,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_superhost' => 'boolean',
+            'is_suspended' => 'boolean',
             'move_in_date' => 'date',
             'budget_min' => 'integer',
             'budget_max' => 'integer',

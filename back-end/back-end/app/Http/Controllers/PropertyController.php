@@ -8,9 +8,21 @@ use Illuminate\Http\Request;
 
 class PropertyController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $properties = Property::with('host')->get();
+        $query = Property::with('host');
+        $user = $request->user();
+
+        if ($user?->role !== 'admin') {
+            $query->where(function ($listings) use ($user) {
+                $listings->where('listing_status', 'available');
+                if ($user?->role === 'homeowner') {
+                    $listings->orWhere('host_id', $user->id);
+                }
+            });
+        }
+
+        $properties = $query->get();
         return response()->json($properties->map(fn($p) => $this->transformProperty($p)));
     }
 
@@ -96,7 +108,7 @@ class PropertyController extends Controller
             'image' => $image,
             'gallery' => $gallery,
             'badge' => 'JUST LISTED',
-            'listing_status' => 'available',
+            'listing_status' => 'pending_review',
             'type' => $validated['type'],
             'pet_friendly' => (bool)($validated['petFriendly'] ?? false),
             'in_unit_laundry' => (bool)($validated['inUnitLaundry'] ?? false),
@@ -129,6 +141,10 @@ class PropertyController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        if (! in_array($property->listing_status, ['available', 'leased'], true)) {
+            return response()->json(['message' => 'This listing must be approved by an administrator before it can be changed.'], 422);
+        }
+
         $validated = $request->validate([
             'listingStatus' => 'required|string|in:available,leased',
         ]);
@@ -136,6 +152,25 @@ class PropertyController extends Controller
         $property->update([
             'listing_status' => $validated['listingStatus'],
             'badge' => $validated['listingStatus'] === 'leased' ? null : ($property->badge ?: 'AVAILABLE NOW'),
+        ]);
+
+        return response()->json($this->transformProperty($property->fresh('host')));
+    }
+
+    public function moderate(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'listingStatus' => 'required|string|in:available,rejected',
+        ]);
+        $property = Property::with('host')->findOrFail($id);
+
+        if ($property->listing_status !== 'pending_review') {
+            return response()->json(['message' => 'Only listings awaiting review can be moderated.'], 422);
+        }
+
+        $property->update([
+            'listing_status' => $validated['listingStatus'],
+            'badge' => $validated['listingStatus'] === 'available' ? 'JUST LISTED' : null,
         ]);
 
         return response()->json($this->transformProperty($property->fresh('host')));

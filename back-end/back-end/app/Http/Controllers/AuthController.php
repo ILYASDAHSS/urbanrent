@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class AuthController extends Controller
 {
@@ -30,7 +31,7 @@ class AuthController extends Controller
         return response()->json([
             'access_token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user
+            'user' => $user,
         ], 201);
     }
 
@@ -49,12 +50,18 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->is_suspended) {
+            return response()->json([
+                'message' => 'This account is suspended. Contact an administrator.',
+            ], 403);
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'access_token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user
+            'user' => $user,
         ]);
     }
 
@@ -63,7 +70,7 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
-            'message' => 'Logged out successfully.'
+            'message' => 'Logged out successfully.',
         ]);
     }
 
@@ -89,6 +96,23 @@ class AuthController extends Controller
 
         $user = $request->user();
         $user->update($validated);
+
+        return response()->json($user->fresh());
+    }
+
+    public function updateAvatar(Request $request)
+    {
+        $validated = $request->validate([
+            'avatar' => 'required|image|max:5120',
+        ]);
+
+        $path = $validated['avatar']->store('avatars', 'public');
+        if ($path === false) {
+            throw new RuntimeException('Unable to store the profile photo.');
+        }
+
+        $user = $request->user();
+        $user->update(['avatar' => '/storage/'.$path]);
 
         return response()->json($user->fresh());
     }

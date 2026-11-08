@@ -37,6 +37,9 @@ class BookingController extends Controller
         ]);
 
         $property = Property::with('host')->findOrFail($request->propertyId);
+        if ($property->listing_status !== 'available') {
+            return response()->json(['message' => 'This home is not currently accepting tour requests.'], 422);
+        }
 
         $booking = Booking::create([
             'user_id' => $request->user()->id,
