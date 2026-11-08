@@ -71,4 +71,25 @@ class AuthController extends Controller
     {
         return response()->json($request->user());
     }
+
+    public function updateProfile(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'phone' => 'nullable|string|max:30',
+            'city' => 'nullable|string|max:120',
+            'occupation' => 'nullable|string|max:120',
+            'bio' => 'nullable|string|max:500',
+            'move_in_date' => 'nullable|date',
+            'budget_min' => 'nullable|integer|min:0|max:100000',
+            'budget_max' => 'nullable|integer|min:0|max:100000',
+            'pets' => 'nullable|string|max:120',
+            'household_size' => 'nullable|integer|min:1|max:12',
+        ]);
+
+        $user = $request->user();
+        $user->update($validated);
+
+        return response()->json($user->fresh());
+    }
 }

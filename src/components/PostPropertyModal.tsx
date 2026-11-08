@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Property } from '../types';
+import { api } from '../api';
 
 interface PostPropertyModalProps {
   isOpen: boolean;
@@ -57,9 +57,34 @@ export const PostPropertyModal: React.FC<PostPropertyModalProps> = ({
   const [evCharging, setEvCharging] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
+  const [pin, setPin] = useState<{ lat: number; lng: number; label: string } | null>(null);
 
   if (!isOpen) return null;
+
+  const locateAddress = async () => {
+    if (!address.trim() || !city.trim()) {
+      setError('Enter a street address and city before placing the pin.');
+      return;
+    }
+    setError('');
+    setLocating(true);
+    try {
+      const located = await api.geocodeAddress({
+        address,
+        city,
+        neighborhood,
+        zipCode,
+      });
+      setPin(located);
+    } catch (err: any) {
+      setPin(null);
+      setError(err.message || 'Could not place this address on the map.');
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +124,8 @@ export const PostPropertyModal: React.FC<PostPropertyModalProps> = ({
       pool,
       evCharging,
       amenities: amenitiesList,
+      lat: pin?.lat,
+      lng: pin?.lng,
     };
 
     try {
@@ -115,6 +142,7 @@ export const PostPropertyModal: React.FC<PostPropertyModalProps> = ({
       setSqft(1000);
       setDescription('');
       setDeposit(2000);
+      setPin(null);
     } catch (err: any) {
       setError(err.message || 'Failed to submit property listing.');
     } finally {
@@ -209,7 +237,10 @@ export const PostPropertyModal: React.FC<PostPropertyModalProps> = ({
                   type="text"
                   required
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    setPin(null);
+                  }}
                   placeholder="123 Main Street"
                   className="w-full px-4 py-2 rounded-xl border border-[#c7c4d8]/50 bg-white focus:border-[#3525cd] outline-none text-sm"
                 />
@@ -242,17 +273,48 @@ export const PostPropertyModal: React.FC<PostPropertyModalProps> = ({
                 />
               </div>
 
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs font-bold text-[#464555] mb-1">ZIP Code</label>
                 <input
                   type="text"
                   required
                   value={zipCode}
-                  onChange={(e) => setZipCode(e.target.value)}
+                  onChange={(e) => {
+                    setZipCode(e.target.value);
+                    setPin(null);
+                  }}
                   placeholder="94103"
                   className="w-full px-4 py-2 rounded-xl border border-[#c7c4d8]/50 bg-white focus:border-[#3525cd] outline-none text-sm"
                 />
               </div>
+            </div>
+
+            <div className="rounded-xl border border-[#c7c4d8]/40 bg-white p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-[#191c1e]">Map pin</p>
+                  <p className="text-[11px] text-[#777587]">
+                    Place the home from the street address so renters can find it.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void locateAddress(); }}
+                  disabled={locating}
+                  className="px-3 py-2 rounded-lg bg-[#3525cd] text-white text-xs font-bold disabled:opacity-70"
+                >
+                  {locating ? 'Locating…' : 'Place on map'}
+                </button>
+              </div>
+              {pin ? (
+                <p className="text-[11px] text-[#005236] font-semibold">
+                  Pin set at {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}. {pin.label}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[#777587]">
+                  If you skip this, the listing is still placed from the address when you publish.
+                </p>
+              )}
             </div>
           </div>
 

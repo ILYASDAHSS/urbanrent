@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\PropertyController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,19 +17,31 @@ Route::get('/properties', [PropertyController::class, 'index']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    
+    Route::put('/profile', [AuthController::class, 'updateProfile']);
+
+    Route::get('/applications', [ApplicationController::class, 'index']);
+    Route::post('/applications', [ApplicationController::class, 'store']);
+    Route::put('/applications/{id}', [ApplicationController::class, 'update']);
+
+    // Saved properties
+    Route::get('/favorites', [FavoriteController::class, 'index']);
+    Route::post('/favorites', [FavoriteController::class, 'store']);
+    Route::delete('/favorites/{propertyId}', [FavoriteController::class, 'destroy']);
+
     // Booking routes
     Route::get('/bookings', [BookingController::class, 'index']);
     Route::post('/bookings', [BookingController::class, 'store']);
     Route::put('/bookings/{id}', [BookingController::class, 'update']);
     Route::delete('/bookings/{id}', [BookingController::class, 'destroy']);
-    
+
     // Homeowner / Admin properties management
     Route::middleware('role:homeowner,admin')->group(function () {
+        Route::post('/geocode', [PropertyController::class, 'geocode']);
         Route::post('/properties', [PropertyController::class, 'store']);
+        Route::put('/properties/{id}', [PropertyController::class, 'update']);
         Route::delete('/properties/{id}', [PropertyController::class, 'destroy']);
     });
-    
+
     // Admin only routes
     Route::middleware('role:admin')->group(function () {
         Route::get('/admin/stats', [AdminController::class, 'stats']);

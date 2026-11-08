@@ -1,6 +1,6 @@
-import { Property, TourBooking } from './types';
+import { Property, RentalApplication, TourBooking } from './types';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 class ApiService {
   private token: string | null = localStorage.getItem('auth_token');
@@ -102,9 +102,41 @@ class ApiService {
     return user;
   }
 
+  async updateProfile(profile: {
+    name?: string;
+    phone?: string;
+    city?: string;
+    occupation?: string;
+    bio?: string;
+    move_in_date?: string | null;
+    budget_min?: number | null;
+    budget_max?: number | null;
+    pets?: string;
+    household_size?: number | null;
+  }): Promise<any> {
+    const user = await this.request('/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+    this.setAuth(this.token, user);
+    return user;
+  }
+
   // Properties APIs
   async getProperties(): Promise<Property[]> {
     return this.request('/properties');
+  }
+
+  async geocodeAddress(location: {
+    address: string;
+    city: string;
+    neighborhood?: string;
+    zipCode?: string;
+  }): Promise<{ lat: number; lng: number; label: string }> {
+    return this.request('/geocode', {
+      method: 'POST',
+      body: JSON.stringify(location),
+    });
   }
 
   async postProperty(propertyData: any): Promise<Property> {
@@ -114,8 +146,54 @@ class ApiService {
     });
   }
 
+  async updatePropertyStatus(id: string, listingStatus: 'available' | 'leased'): Promise<Property> {
+    return this.request(`/properties/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ listingStatus }),
+    });
+  }
+
   async deleteProperty(id: string): Promise<void> {
     await this.request(`/properties/${id}`, { method: 'DELETE' });
+  }
+
+  async getApplications(): Promise<RentalApplication[]> {
+    return this.request('/applications');
+  }
+
+  async createApplication(application: {
+    propertyId: string;
+    message: string;
+    moveInDate?: string;
+    occupants?: number;
+    employment?: string;
+  }): Promise<RentalApplication> {
+    return this.request('/applications', {
+      method: 'POST',
+      body: JSON.stringify(application),
+    });
+  }
+
+  async updateApplicationStatus(id: string, status: RentalApplication['status']): Promise<RentalApplication> {
+    return this.request(`/applications/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async getFavoritePropertyIds(): Promise<string[]> {
+    return this.request('/favorites');
+  }
+
+  async addFavorite(propertyId: string): Promise<void> {
+    await this.request('/favorites', {
+      method: 'POST',
+      body: JSON.stringify({ propertyId }),
+    });
+  }
+
+  async removeFavorite(propertyId: string): Promise<void> {
+    await this.request(`/favorites/${propertyId}`, { method: 'DELETE' });
   }
 
   // Bookings APIs
@@ -123,7 +201,14 @@ class ApiService {
     return this.request('/bookings');
   }
 
-  async createBooking(bookingData: { propertyId: string; date: string; time: string; type: string }): Promise<TourBooking> {
+  async createBooking(bookingData: {
+    propertyId: string;
+    date: string;
+    time: string;
+    type: TourBooking['type'];
+    tenantName: string;
+    tenantPhone: string;
+  }): Promise<TourBooking> {
     return this.request('/bookings', {
       method: 'POST',
       body: JSON.stringify(bookingData),

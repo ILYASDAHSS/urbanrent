@@ -32,6 +32,8 @@ class BookingController extends Controller
             'date' => 'required|string',
             'time' => 'required|string',
             'type' => 'required|string|in:in-person,virtual',
+            'tenantName' => 'required|string|max:255',
+            'tenantPhone' => 'required|string|max:50',
         ]);
 
         $property = Property::with('host')->findOrFail($request->propertyId);
@@ -44,6 +46,8 @@ class BookingController extends Controller
             'type' => $request->type,
             'status' => 'Pending',
             'host_name' => $property->host ? $property->host->name : 'Unknown Host',
+            'tenant_name' => $request->tenantName,
+            'tenant_phone' => $request->tenantPhone,
         ]);
 
         return response()->json($this->transformBooking($booking->load(['property.host', 'user'])), 201);
@@ -105,9 +109,9 @@ class BookingController extends Controller
             'type' => $b->type,
             'status' => $b->status,
             'hostName' => $b->host_name,
-            'tenantName' => $b->user ? $b->user->name : 'Unknown Tenant',
+            'tenantName' => $b->tenant_name ?? ($b->user ? $b->user->name : 'Unknown Tenant'),
             'tenantEmail' => $b->user ? $b->user->email : '',
-            'tenantPhone' => $b->user ? $b->user->phone : '',
+            'tenantPhone' => $b->tenant_phone ?? ($b->user ? $b->user->phone : ''),
         ];
     }
 }

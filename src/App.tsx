@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Property, FilterState, TourBooking, NotificationItem } from './types';
-import { INITIAL_PROPERTIES, INITIAL_NOTIFICATIONS } from './data/properties';
+import { Property, FilterState, TourBooking, NotificationItem, RentalApplication } from './types';
+import { INITIAL_NOTIFICATIONS } from './data/properties';
 import { api } from './api';
 import { AuthView } from './components/AuthView';
 import { Header } from './components/Header';
@@ -22,13 +22,16 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   // Properties & Favorites
-  const [properties, setProperties] = useState<Property[]>(INITIAL_PROPERTIES);
-  // Default favorite matches screenshot card #2 (Astor Tower Lofts)
-  const [favorites, setFavorites] = useState<string[]>(['astor-tower-lofts']);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
 
   // Auth state
   const [user, setUser] = useState<any | null>(api.getUser());
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [dataError, setDataError] = useState('');
+  const [dataNotice, setDataNotice] = useState('');
   const [isPostPropertyModalOpen, setIsPostPropertyModalOpen] = useState(false);
 
   // Modals & Selections
@@ -39,22 +42,8 @@ export default function App() {
 
   // User Data State
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
-  const [bookings, setBookings] = useState<TourBooking[]>([
-    {
-      id: 'tour-1',
-      propertyId: 'lumina-residences',
-      propertyTitle: 'The Lumina Residences',
-      propertyImage: INITIAL_PROPERTIES[0].image,
-      date: '2026-08-11',
-      time: '02:00 PM',
-      type: 'in-person',
-      status: 'Confirmed',
-      hostName: 'Victoria Vance',
-      tenantName: 'Jordan Fisher',
-      tenantEmail: 'jordan.fisher@example.com',
-      tenantPhone: '415-555-0198'
-    }
-  ]);
+  const [bookings, setBookings] = useState<TourBooking[]>([]);
+  const [applications, setApplications] = useState<RentalApplication[]>([]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -66,12 +55,62 @@ export default function App() {
           api.setAuth(null, null);
           setUser(null);
         }
+      } else {
+        setUser(null);
       }
       setIsAuthLoading(false);
     };
 
     initAuth();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setProperties([]);
+      setBookings([]);
+      setFavorites([]);
+      setApplications([]);
+      setAdminUsers([]);
+      setIsDataLoading(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsDataLoading(true);
+    setDataError('');
+
+    const adminUsersRequest = user.role === 'admin' ? api.getAdminUsers() : Promise.resolve([]);
+    Promise.all([
+      api.getProperties(),
+      api.getBookings(),
+      api.getFavoritePropertyIds(),
+      api.getApplications(),
+      adminUsersRequest,
+    ])
+      .then(([storedProperties, storedBookings, storedFavorites, storedApplications, storedAdminUsers]) => {
+        if (isCurrent) {
+          setProperties(storedProperties);
+          setBookings(storedBookings);
+          setFavorites(storedFavorites);
+          setApplications(storedApplications);
+          setAdminUsers(storedAdminUsers);
+        }
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          setDataError(error instanceof Error ? error.message : 'Could not load saved data.');
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsDataLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [user]);
 
   const handleAuthSuccess = (authUser: any) => {
     setUser(authUser);
@@ -90,79 +129,77 @@ export default function App() {
   };
 
   const handleSubmitNewProperty = async (propertyData: any) => {
-    const newProperty: Property = {
-      id: `property-${Date.now()}`,
-      title: propertyData.title,
-      address: propertyData.address,
-      city: propertyData.city,
-      neighborhood: propertyData.neighborhood,
-      zipCode: propertyData.zipCode,
-      price: propertyData.price,
-      beds: propertyData.beds,
-      baths: propertyData.baths,
-      sqft: propertyData.sqft,
-      image: propertyData.image,
-      gallery: [propertyData.image],
-      badge: 'JUST LISTED',
-      type: propertyData.type,
-      petFriendly: propertyData.petFriendly,
-      inUnitLaundry: propertyData.inUnitLaundry,
-      parking: propertyData.parking,
-      balcony: propertyData.balcony,
-      gym: propertyData.gym,
-      pool: propertyData.pool,
-      evCharging: propertyData.evCharging,
-      description: propertyData.description,
-      rating: 4.8,
-      reviewCount: 0,
-      lat: propertyData.lat || 37.7749,
-      lng: propertyData.lng || -122.4194,
-      deposit: propertyData.deposit,
-      leaseTerms: propertyData.leaseTerms,
-      availableDate: propertyData.availableDate,
-      amenities: propertyData.amenities,
-      host: {
-        name: user?.name || 'Host',
-        avatar:
-          user?.avatar ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-        phone: user?.phone || '',
-        email: user?.email || 'host@urbanrent.com',
-        isSuperhost: false,
-      },
-    };
-
+    const newProperty = await api.postProperty(propertyData);
     setProperties((prev) => [newProperty, ...prev]);
+    setFilters((prev) => ({
+      ...prev,
+      propertyType: prev.propertyType.length > 0 && !prev.propertyType.includes(newProperty.type)
+        ? [...prev.propertyType, newProperty.type]
+        : prev.propertyType,
+      minPrice: Math.min(prev.minPrice, newProperty.price),
+      maxPrice: Math.max(prev.maxPrice, newProperty.price),
+    }));
+    setDataNotice(`${newProperty.title} is live. Renters can see it in search and on the map.`);
+    setActiveTab('search');
+  };
+
+  const handleUpdatePropertyStatus = async (id: string, listingStatus: 'available' | 'leased') => {
+    const updated = await api.updatePropertyStatus(id, listingStatus);
+    setProperties((prev) => prev.map((property) => property.id === id ? updated : property));
   };
 
   const handleDeleteProperty = async (id: string) => {
+    await api.deleteProperty(id);
     setProperties((prev) => prev.filter((p) => p.id !== id));
+    setBookings((prev) => prev.filter((booking) => booking.propertyId !== id));
+    setFavorites((prev) => prev.filter((favoriteId) => favoriteId !== id));
   };
 
   const handleUpdateBookingStatus = async (id: string, status: string) => {
-    setBookings((prev) =>
-      prev.map((booking) => (booking.id === id ? { ...booking, status } : booking))
-    );
+    const updatedBooking = await api.updateBookingStatus(id, status);
+    setBookings((prev) => prev.map((booking) => booking.id === id ? updatedBooking : booking));
   };
 
-  const handleAddBooking = (newBooking: TourBooking) => {
-    setBookings((prev) => [
-      {
-        ...newBooking,
-        tenantName: user?.name || 'Guest',
-        tenantEmail: user?.email || '',
-        tenantPhone: user?.phone || '',
-      },
-      ...prev,
-    ]);
+  const handleAddBooking = async (bookingData: {
+    propertyId: string;
+    date: string;
+    time: string;
+    type: TourBooking['type'];
+    tenantName: string;
+    tenantPhone: string;
+  }) => {
+    const newBooking = await api.createBooking(bookingData);
+    setBookings((prev) => [newBooking, ...prev]);
+    return newBooking;
+  };
+
+  const handleApply = async (application: {
+    propertyId: string;
+    message: string;
+    moveInDate?: string;
+    occupants?: number;
+    employment?: string;
+  }) => {
+    const created = await api.createApplication(application);
+    setApplications((prev) => [created, ...prev]);
+  };
+
+  const handleUpdateApplicationStatus = async (id: string, status: RentalApplication['status']) => {
+    const updated = await api.updateApplicationStatus(id, status);
+    setApplications((prev) => prev.map((application) => application.id === id ? updated : application));
+  };
+
+  const handleUpdateProfile = async (profile: Record<string, unknown>) => {
+    const updatedUser = await api.updateProfile(profile);
+    setUser(updatedUser);
   };
 
   // Initial Filter State
   const initialFilterState: FilterState = {
     searchQuery: '',
-    propertyType: ['Apartment'],
-    minPrice: 1500,
-    maxPrice: 3500,
+    propertyType: [],
+    minPrice: 0,
+    maxPrice: 15000,
     beds: 'any',
     baths: 'any',
     petFriendly: false,
@@ -179,14 +216,29 @@ export default function App() {
   const handleToggleFavorite = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    const isFavorite = favorites.includes(id);
+    setDataError('');
+
+    const updateFavorite = isFavorite ? api.removeFavorite(id) : api.addFavorite(id);
+    updateFavorite
+      .then(() => {
+        setFavorites((prev) =>
+          isFavorite ? prev.filter((item) => item !== id) : [...prev, id]
+        );
+      })
+      .catch((error: unknown) => {
+        setDataError(error instanceof Error ? error.message : 'Could not save this favorite.');
+      });
   };
+
+  const browseProperties = useMemo(
+    () => properties.filter((property) => property.listingStatus !== 'leased'),
+    [properties]
+  );
 
   // Filter & Search Engine
   const filteredProperties = useMemo(() => {
-    return properties
+    return browseProperties
       .filter((p) => {
         // Search query
         if (filters.searchQuery.trim() !== '') {
@@ -217,8 +269,10 @@ export default function App() {
         if (filters.beds !== 'any') {
           if (filters.beds === 'studio' && p.beds !== 'Studio') return false;
           if (filters.beds === '1' && p.beds !== 1) return false;
-          if (filters.beds === '2' && p.beds !== 2) return false;
-          if (filters.beds === '3+' && (typeof p.beds !== 'number' || p.beds < 3)) return false;
+          const bedCount = typeof p.beds === 'number' ? p.beds : Number.parseInt(String(p.beds), 10);
+          if (filters.beds === '2' && bedCount !== 2) return false;
+          if (filters.beds === '2+' && !(bedCount >= 2)) return false;
+          if (filters.beds === '3+' && !(bedCount >= 3)) return false;
         }
 
         // Baths filter
@@ -243,7 +297,7 @@ export default function App() {
         if (filters.sortBy === 'newest') return b.id.localeCompare(a.id);
         return 0; // recommended / default order
       });
-  }, [properties, filters]);
+  }, [browseProperties, filters]);
 
   // Quick Chips Actions
   const toggleTypeChip = (type: string) => {
@@ -265,8 +319,18 @@ export default function App() {
     }
   };
 
-  const handleCancelBooking = (id: string) => {
-    setBookings((prev) => prev.filter((b) => b.id !== id));
+  const handleCancelBooking = async (id: string) => {
+    await handleUpdateBookingStatus(id, 'Cancelled');
+  };
+
+  const handleUpdateUserRole = async (id: number | string, role: string) => {
+    const updatedUser = await api.updateUserRole(id, role);
+    setAdminUsers((prev) => prev.map((adminUser) => adminUser.id === updatedUser.id ? updatedUser : adminUser));
+  };
+
+  const handleDeleteUser = async (id: number | string) => {
+    await api.deleteUser(id);
+    setAdminUsers((prev) => prev.filter((adminUser) => adminUser.id !== id));
   };
 
   if (isAuthLoading) {
@@ -301,10 +365,23 @@ export default function App() {
 
       {/* Main Container */}
       <main className="max-w-[1280px] w-full mx-auto px-4 md:px-20 py-6 flex-1 relative">
+        {isDataLoading && (
+          <p className="mb-4 text-sm text-[#777587]" role="status">Loading saved listings and bookings…</p>
+        )}
+        {dataNotice && (
+          <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+            {dataNotice}
+          </p>
+        )}
+        {dataError && (
+          <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+            {dataError}
+          </p>
+        )}
         {/* TAB 1: HOME */}
         {activeTab === 'home' && (
           <HomeView
-            featuredProperties={properties}
+            featuredProperties={browseProperties}
             onSelectProperty={(p) => setSelectedProperty(p)}
             favorites={favorites}
             onToggleFavorite={handleToggleFavorite}
@@ -372,7 +449,11 @@ export default function App() {
                 {/* Price Chip */}
                 <button
                   onClick={() =>
-                    setFilters((prev) => ({ ...prev, minPrice: 1500, maxPrice: 3000 }))
+                    setFilters((prev) => ({
+                      ...prev,
+                      minPrice: prev.minPrice === 1500 && prev.maxPrice === 3000 ? 0 : 1500,
+                      maxPrice: prev.minPrice === 1500 && prev.maxPrice === 3000 ? 15000 : 3000,
+                    }))
                   }
                   className={`px-4 py-1.5 rounded-full font-semibold text-xs border whitespace-nowrap transition-all ${
                     filters.minPrice === 1500 && filters.maxPrice === 3000
@@ -388,11 +469,11 @@ export default function App() {
                   onClick={() =>
                     setFilters((prev) => ({
                       ...prev,
-                      beds: prev.beds === '2' ? 'any' : '2'
+                      beds: prev.beds === '2+' ? 'any' : '2+'
                     }))
                   }
                   className={`px-4 py-1.5 rounded-full font-semibold text-xs border whitespace-nowrap transition-all ${
-                    filters.beds === '2'
+                    filters.beds === '2+'
                       ? 'bg-[#3525cd]/10 text-[#3525cd] border-[#3525cd]/30'
                       : 'bg-[#f2f4f6] text-[#464555] border-[#c7c4d8]/30 hover:bg-[#e0e3e5]'
                   }`}
@@ -420,10 +501,10 @@ export default function App() {
             <div className="flex justify-between items-end">
               <div>
                 <h1 className="text-2xl font-bold text-[#191c1e] mb-1">
-                  Properties near Downtown
+                  {filters.searchQuery ? `Results for “${filters.searchQuery}”` : 'Available rentals'}
                 </h1>
                 <p className="text-sm text-[#777587]">
-                  Showing {filteredProperties.length} premium listings
+                  Showing {filteredProperties.length} of {browseProperties.length} listings
                 </p>
               </div>
 
@@ -447,6 +528,20 @@ export default function App() {
                 </select>
               </div>
             </div>
+
+            {browseProperties.length > filteredProperties.length && (
+              <div className="rounded-xl border border-[#3525cd]/20 bg-[#3525cd]/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-sm text-[#191c1e]">
+                  {browseProperties.length - filteredProperties.length} listings are hidden by the current filters.
+                </p>
+                <button
+                  onClick={() => setFilters(initialFilterState)}
+                  className="px-3 py-2 rounded-lg bg-white border border-[#3525cd]/30 text-[#3525cd] text-xs font-bold"
+                >
+                  Show every listing
+                </button>
+              </div>
+            )}
 
             {/* View Switching Layout */}
             {viewMode === 'map' ? (
@@ -509,11 +604,18 @@ export default function App() {
             user={user}
             bookings={bookings}
             properties={properties}
+            adminUsers={adminUsers}
             onCancelBooking={handleCancelBooking}
             onLogout={handleLogout}
             onAddPropertyOpen={() => setIsPostPropertyModalOpen(true)}
             onDeleteProperty={handleDeleteProperty}
             onUpdateBookingStatus={handleUpdateBookingStatus}
+            onUpdatePropertyStatus={handleUpdatePropertyStatus}
+            onUpdateUserRole={handleUpdateUserRole}
+            onDeleteUser={handleDeleteUser}
+            applications={applications}
+            onUpdateApplicationStatus={handleUpdateApplicationStatus}
+            onUpdateProfile={handleUpdateProfile}
           />
         )}
       </main>
@@ -557,10 +659,13 @@ export default function App() {
           setSelectedProperty(null);
           setTourProperty(p);
         }}
+        canApply={user.role === 'user'}
+        onApply={handleApply}
       />
 
       <ScheduleTourModal
         property={tourProperty}
+        user={user}
         onClose={() => setTourProperty(null)}
         onConfirmBooking={handleAddBooking}
       />

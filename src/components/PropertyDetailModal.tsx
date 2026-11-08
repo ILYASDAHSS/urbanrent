@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Property } from '../types';
 
 interface PropertyDetailModalProps {
@@ -7,6 +7,14 @@ interface PropertyDetailModalProps {
   isFavorite: boolean;
   onToggleFavorite: (e: React.MouseEvent, id: string) => void;
   onOpenScheduleTour: (property: Property) => void;
+  canApply?: boolean;
+  onApply?: (application: {
+    propertyId: string;
+    message: string;
+    moveInDate?: string;
+    occupants?: number;
+    employment?: string;
+  }) => Promise<void>;
 }
 
 export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
@@ -14,19 +22,52 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   onClose,
   isFavorite,
   onToggleFavorite,
-  onOpenScheduleTour
+  onOpenScheduleTour,
+  canApply = false,
+  onApply,
 }) => {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [showContactHost, setShowContactHost] = useState(false);
+  const [showApplication, setShowApplication] = useState(false);
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
+  const [applicationError, setApplicationError] = useState('');
+  const [submittingApplication, setSubmittingApplication] = useState(false);
+  const [moveInDate, setMoveInDate] = useState('');
+  const [occupants, setOccupants] = useState(1);
+  const [employment, setEmployment] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setShowApplication(false);
+    setApplicationSubmitted(false);
+    setApplicationError('');
+    setMessage('');
+  }, [property?.id]);
 
   if (!property) return null;
 
-  const handleApply = () => {
-    setApplicationSubmitted(true);
-    setTimeout(() => {
-      setApplicationSubmitted(false);
-    }, 4000);
+  const moveInCost = property.price + property.deposit;
+
+  const handleApply = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!onApply) return;
+    setApplicationError('');
+    setSubmittingApplication(true);
+    try {
+      await onApply({
+        propertyId: property.id,
+        message,
+        moveInDate: moveInDate || undefined,
+        occupants,
+        employment,
+      });
+      setApplicationSubmitted(true);
+      setShowApplication(false);
+    } catch (error) {
+      setApplicationError(error instanceof Error ? error.message : 'Could not send this application.');
+    } finally {
+      setSubmittingApplication(false);
+    }
   };
 
   return (
@@ -143,6 +184,9 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
               </div>
               <p className="text-xs text-[#005236] font-semibold mt-0.5">
                 Deposit: ${property.deposit.toLocaleString()} • Available {property.availableDate}
+              </p>
+              <p className="text-[11px] text-[#777587]">
+                Estimated to move in: ${moveInCost.toLocaleString()} (first month + deposit)
               </p>
             </div>
           </div>
@@ -278,6 +322,63 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             </div>
           )}
 
+          {showApplication && canApply && (
+            <form onSubmit={handleApply} className="p-4 rounded-2xl border border-[#3525cd]/20 bg-[#3525cd]/5 space-y-3">
+              <h3 className="font-bold text-sm text-[#191c1e]">Rental application</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="text-xs font-bold text-[#464555]">
+                  Move-in date
+                  <input
+                    type="date"
+                    value={moveInDate}
+                    onChange={(event) => setMoveInDate(event.target.value)}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-[#c7c4d8]/50 bg-white font-normal"
+                  />
+                </label>
+                <label className="text-xs font-bold text-[#464555]">
+                  People moving in
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={occupants}
+                    onChange={(event) => setOccupants(Number(event.target.value))}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-[#c7c4d8]/50 bg-white font-normal"
+                  />
+                </label>
+                <label className="text-xs font-bold text-[#464555]">
+                  Work
+                  <input
+                    type="text"
+                    value={employment}
+                    onChange={(event) => setEmployment(event.target.value)}
+                    placeholder="Role and employer"
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-[#c7c4d8]/50 bg-white font-normal"
+                  />
+                </label>
+              </div>
+              <label className="block text-xs font-bold text-[#464555]">
+                Note to the owner
+                <textarea
+                  required
+                  rows={3}
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  placeholder="Introduce yourself, your timeline, and anything the owner should know."
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-[#c7c4d8]/50 bg-white font-normal"
+                />
+              </label>
+              {applicationError && <p className="text-xs text-red-700">{applicationError}</p>}
+              <button
+                type="submit"
+                disabled={submittingApplication}
+                className="px-4 py-2 rounded-xl bg-[#3525cd] text-white text-sm font-bold disabled:opacity-70"
+              >
+                {submittingApplication ? 'Sending…' : 'Send application'}
+              </button>
+            </form>
+          )}
+
           {applicationSubmitted && (
             <div className="p-4 rounded-xl bg-[#005236] text-white flex items-center gap-3 animate-fade-in">
               <span className="material-symbols-outlined text-2xl">check_circle</span>
@@ -309,12 +410,14 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
               Schedule Tour
             </button>
 
-            <button
-              onClick={handleApply}
-              className="flex-1 sm:flex-initial px-6 py-3 rounded-xl bg-[#3525cd] text-white hover:bg-[#4f46e5] font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
-            >
-              Apply Now
-            </button>
+            {canApply && (
+              <button
+                onClick={() => setShowApplication((open) => !open)}
+                className="flex-1 sm:flex-initial px-6 py-3 rounded-xl bg-[#3525cd] text-white hover:bg-[#4f46e5] font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
+              >
+                Apply Now
+              </button>
+            )}
           </div>
         </div>
       </div>
