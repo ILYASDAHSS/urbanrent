@@ -1,12 +1,15 @@
-# UrbanRent
+# UrbanRent – Real Estate Rental & Property Management Platform
 
-UrbanRent is a full-stack real estate rental and property management platform that allows property owners to publish and manage their properties while giving renters the ability to discover, view, and book properties online.
+UrbanRent is a full-stack web application designed to simplify property rentals and management by connecting property owners with potential tenants through a centralized digital platform.
 
-## Run locally
+The platform allows property owners to publish, update, and manage property listings, while renters can browse available properties, explore detailed information, and submit booking requests online.
 
-Prerequisites: Node.js, PHP 8.3+, and Composer.
+**Key Features:**
+- Property listing and management.
+- Property search and browsing.
+- Online rental booking requests.
+- User authentication and account management.
+- Property owner and renter functionalities.
+- Responsive and user-friendly interface.
 
-1. Install frontend dependencies from the repository root:
-
-   ```sh
-   npm install
+**Technologies:** React, Laravel, PHP, MySQL, Tailwind CSS, JavaScript.
