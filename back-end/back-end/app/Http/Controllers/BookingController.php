@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Booking;
 use App\Models\Property;
+use App\Services\NewsletterService;
 use Illuminate\Http\Request;
 
 class BookingController extends Controller
 {
+    public function __construct(private NewsletterService $newsletterService) {}
     public function index(Request $request)
     {
         $user = $request->user();
@@ -82,6 +84,15 @@ class BookingController extends Controller
         $booking->update([
             'status' => $request->status,
         ]);
+
+        if ($request->status === 'Confirmed' && $booking->user) {
+            $this->newsletterService->send(
+                user: $booking->user,
+                property: $booking->property,
+                context: 'booking',
+                customMessage: 'Your tour request was confirmed. Here are the latest UrbanRent updates and the property details you are exploring.',
+            );
+        }
 
         return response()->json($this->transformBooking($booking->load(['property.host', 'user'])));
     }

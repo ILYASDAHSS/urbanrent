@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Property;
 use App\Services\AddressGeocoder;
+use App\Services\NewsletterService;
 use Illuminate\Http\Request;
 
 class PropertyController extends Controller
 {
+    public function __construct(private NewsletterService $newsletterService) {}
     public function index(Request $request)
     {
         $query = Property::with('host');
@@ -130,6 +132,13 @@ class PropertyController extends Controller
 
         $property->load('host');
 
+        $this->newsletterService->send(
+            user: $request->user(),
+            property: $property,
+            context: 'listing',
+            customMessage: 'Your UrbanRent listing is now live and we wanted to share the latest platform updates with you.',
+        );
+
         return response()->json($this->transformProperty($property), 201);
     }
 
@@ -172,6 +181,15 @@ class PropertyController extends Controller
             'listing_status' => $validated['listingStatus'],
             'badge' => $validated['listingStatus'] === 'available' ? 'JUST LISTED' : null,
         ]);
+
+        if ($validated['listingStatus'] === 'available') {
+            $this->newsletterService->send(
+                user: $property->host,
+                property: $property->fresh('host'),
+                context: 'listing',
+                customMessage: 'Your listing has been approved and is now visible to renters on UrbanRent.',
+            );
+        }
 
         return response()->json($this->transformProperty($property->fresh('host')));
     }

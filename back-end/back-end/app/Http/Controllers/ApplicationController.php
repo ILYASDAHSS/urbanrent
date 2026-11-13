@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Property;
 use App\Models\RentalApplication;
+use App\Services\NewsletterService;
 use Illuminate\Http\Request;
 
 class ApplicationController extends Controller
 {
+    public function __construct(private NewsletterService $newsletterService) {}
     public function index(Request $request)
     {
         $user = $request->user();
@@ -80,6 +82,15 @@ class ApplicationController extends Controller
         ]);
 
         $application->update(['status' => $validated['status']]);
+
+        if ($validated['status'] === 'approved' && $application->tenant) {
+            $this->newsletterService->send(
+                user: $application->tenant,
+                property: $application->property,
+                context: 'application',
+                customMessage: 'Your rental application was approved. We have included the latest UrbanRent features and your property details in this update.',
+            );
+        }
 
         return response()->json($this->transform($application->fresh(['property.host', 'tenant'])));
     }

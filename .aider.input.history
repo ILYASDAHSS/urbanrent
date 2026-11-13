@@ -1,0 +1,47 @@
+
+# 2026-11-09 16:05:16.121410
++N
+
+# 2026-11-09 16:06:59.124284
++Act as a senior full-stack software architect.
++
++I want you to audit my existing UrbanRent project.
++
++STRICT RULES:
++- READ ONLY. Do not edit, create, delete or overwrite files.
++- Do not run database migrations or destructive commands.
++- Never expose credentials or secrets.
++- Inspect the actual source code before making conclusions.
++
++TASKS:
++
++1. Explore the complete project structure.
++2. Identify the React frontend architecture.
++3. Identify the Laravel backend architecture.
++4. Examine API routes, controllers, models and middleware.
++5. Understand the database schema and relationships.
++6. Identify all existing features.
++7. Find incomplete functionality and potential bugs.
++8. Review authentication, authorization and security.
++9. Evaluate code quality and architecture.
++10. Suggest 15 valuable new features for UrbanRent.
++
++For every issue, provide:
++- File path
++- Explanation
++- Severity
++- Suggested solution
++
++For new features, provide:
++- Feature description
++- Business value
++- Implementation difficulty
++- Priority
++
++Finally, give the project a score out of 100.
++
++Start by exploring the repository. Work in small steps because your context window is limited.
++Do not modify anything. thanks a lot 
+
+# 2026-11-09 16:51:26.750059
++Y

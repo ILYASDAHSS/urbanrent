@@ -5,6 +5,7 @@ use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\FavoriteController;
+use App\Http\Controllers\NewsletterController;
 use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\RentPaymentController;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/applications', [ApplicationController::class, 'index']);
     Route::post('/applications', [ApplicationController::class, 'store']);
     Route::put('/applications/{id}', [ApplicationController::class, 'update']);
+    Route::post('/newsletter', [NewsletterController::class, 'send']);
+    Route::post('/newsletters', [NewsletterController::class, 'send']);
     Route::get('/payments', [RentPaymentController::class, 'index']);
     Route::post('/applications/{id}/payments', [RentPaymentController::class, 'store']);
     Route::put('/payments/{id}/confirm', [RentPaymentController::class, 'confirmInPersonPayment']);

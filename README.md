@@ -45,6 +45,8 @@ Prerequisites: Node.js, PHP 8.3+, and Composer.
 
 New homeowner listings stay in **Awaiting admin approval** until an administrator approves them. Renters can submit applications for approved listings; after an application is approved, they can pay that month's rent by card or in person. In-person payments remain pending until the owner or an administrator confirms receipt.
 
+Automated UrbanRent newsletter emails are sent after key property and application milestones so owners and renters receive a digest of new app features alongside the relevant property or listing details.
+
 Card payments use Stripe Checkout and are collected by the UrbanRent platform; owner payouts are handled separately. Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `FRONTEND_URL` in `back-end/back-end/.env` before enabling live charges. Use Stripe test-mode keys while developing and forward Stripe's `checkout.session.completed` and `checkout.session.expired` events to `http://localhost:8000/api/stripe/webhook` (for example, with the Stripe CLI). A successful browser redirect alone does not mark a payment as paid; the signed webhook does.
 
 Administrators can approve/reject new listings, review applications, manage bookings, suspend/reinstate or delete accounts, and download a monthly CSV of listings and rent-payment records from the profile's **Monthly Reports** tab.
